@@ -12,7 +12,7 @@ from scipy import signal
 from scipy import stats
 
 def get_data_by_rat(DATA, rat):
-    for key in DATA.keys():                 # DATA is global. data should be loaded in the form of a dict.
+    for key in DATA.keys():                 # data should be loaded in the form of a dict.
         if rat in key and 'PFC' in key:     # where keys are (descriptive) file names
             PFC = DATA[key]                 # and values are arrays containing timeseries data for that session
         if rat in key and 'HPC' in key:
