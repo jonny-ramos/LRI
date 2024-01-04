@@ -58,7 +58,7 @@ def norm_timeseries(DATA, rat, ref_side='L', HPC_ch=True, BLA_ch=True):
                 print('comparing cue_light len, timestamps across regions:\n')
                 for reg in R:
                     ch_key = list(reg.keys())[0]
-                    print(f'{ch_key} len: {len(reg[ch_key]["timeseries"])}')    # note to self: use " " inside f strings
+                    print(f'{ch_key} len: {len(reg[ch_key]["timeseries"])}')   
                     print(f'{ch_key} cue_light: {reg[ch_key]["cue_light"]}\n')
                     #print(f'{ch_id[0]} lever: {reg[ch_id[0]]["lever"]}')
             #==================================================================#
@@ -205,7 +205,7 @@ def slice_by_side(reg, s_pre, s_post, RAT_ID, rewarded=True):
         #     print(reg)
         rat_reg = reg[rat]
 
-        (d_rewarded, d_unrewarded) = slice_epochs(rat_reg, s_pre, s_post)    # 1.5s before, 1.5s after
+        (d_rewarded, d_unrewarded) = slice_epochs(rat_reg, s_pre, s_post) 
 
         if rewarded == True:
             d_epochs = d_rewarded
@@ -305,7 +305,7 @@ def filter_artifacts(trials, artifact_filter):
     for i in range(len(trials)):
         cleaned_trial = np.array(trials[i])[~artifact_filter[i]]
 
-        if len(cleaned_trial) == len(trials[i]):    # 2000 is fs, hardcoded here bc i never expect anything else.
+        if len(cleaned_trial) == len(trials[i]): 
             cleaned.append(cleaned_trial)
 
     return cleaned
@@ -474,7 +474,7 @@ def compute_mwt(signal, fs, peak_freq, n):
     sig_fft = fft(sig, n_conv_pwr2)
     wavelet_fft = fft(wavelet, n_conv_pwr2)
     conv_result = ifft(sig_fft * wavelet_fft)[:n_conv]#* (np.sqrt(s)/20) # scaling factor = np.squrt(s)/20
-    conv_result = conv_result[n_half_wavelet:-n_half_wavelet]   # bc that's what mike used in the text
+    conv_result = conv_result[n_half_wavelet:-n_half_wavelet]  
 
     return(conv_result) # removed amp and pha outputs for more straight forward list comprehension
 
