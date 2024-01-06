@@ -8,6 +8,7 @@ Rats were trained to press a lever for an IV cocaine infusion reward on a fixed 
 The code included here was used to manually curate trials via visual inspection and perform various LFP analyses. Not all analyses are accompanied by a plot and for these types of analyses, the output of analyzeLFP.py consists either of text describing statistical outcomes (notably for permutation testing) or an output binary file containing the resulting transformed data or computed metrics. Plotting for these analyses was carried in a separate series of jupyter notebooks, some of which are included here. In addition to the code and sample jupyter notebooks, I have included a pdf containing sample figures that were produced by the results of this code. 
 
 References: 
+
 PAC, mean vector length:
 Canolty RT, Edwards E, Dalal SS, Soltani M, Nagarajan SS, Kirsch HE, Berger MS, Barbaro NM, Knight RT. High gamma power is phase-locked to theta oscillations in human neocortex. Science. 2006 Sep 15;313(5793):1626-8. doi: 10.1126/science.1128115. PMID: 16973878; PMCID: PMC2628289.
 https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2628289/ 
