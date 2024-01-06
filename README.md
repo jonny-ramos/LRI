@@ -29,5 +29,3 @@ https://www.sciencedirect.com/science/article/abs/pii/S0167278900000877
 
 Phase lag index
 Stam CJ, Nolte G, Daffertshofer A. Phase lag index: assessment of functional connectivity from multi channel EEG and MEG with diminished bias from common sources. Hum Brain Mapp. 2007 Nov;28(11):1178-93. doi: 10.1002/hbm.20346. PMID: 17266107; PMCID: PMC6871367. https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6871367/ 
- 
-![image](https://github.com/jonny-ramos/LRI/assets/151964299/4a025e1d-0567-4b67-959b-a40aabefbdb4)
