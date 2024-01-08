@@ -1,0 +1,45 @@
+(base) Jonathans-MacBook-Pro-2:Fig6 Permutation Testing jonathanramos$ python3 bootstrap_behavior.py 
+
+Bootstrapped results (two-tailed p)
+n of all possible combinations for Veh: 25 choose 5 = 53130
+n of all possible combinations for ABC: 25 choose 3 = 2300
+n_iter: 10000
+random seed: 1234567
+veh active:
+	H0_mean: p=0.4174
+	H0_median p=0.3803
+abc active:
+	H0_mean: p=0.11929999999999996
+	H0_median p=0.010700000000000043
+
+Bootstrapped results (two-tailed p)
+n of all possible combinations for Veh: 25 choose 5 = 53130
+n of all possible combinations for ABC: 25 choose 3 = 2300
+n_iter: 10000
+random seed: 1234567
+veh reward:
+	H0_mean: p=0.5245
+	H0_median p=0.2992
+abc reward:
+	H0_mean: p=0.0827
+	H0_median p=0.02980000000000005
+
+Permutation test results (one-tailed p)
+n_iter: 10000
+random seed: 1234567
+veh active:
+	H0_mean: p=0.6293
+	H0_median: p=0.8348
+abc active:
+	H0_mean: p=0.9451
+	H0_median: p=1.0
+
+Permutation test results (one-tailed p)
+n_iter: 10000
+random seed: 1234567
+veh reward:
+	H0_mean: p=0.2131
+	H0_median: p=0.3337
+abc reward:
+	H0_mean: p=0.7771
+	H0_median: p=1.0
