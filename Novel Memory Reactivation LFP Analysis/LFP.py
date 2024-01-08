@@ -266,7 +266,7 @@ def rms_artifact_ID(trial, stepsize, sampsize, rmsthresh):
 
     # returning an array of booleans here because we will need to
     # add arrays of booleans from PFC and HPC together
-    return(artifact_bools)
+    return artifact_bools
 
 def get_artifacts(R, step, samp, thresh):
     '''
@@ -419,48 +419,6 @@ def compute_mwt(signal, fs, peak_freq, n):
     f = peak_freq
     t = np.arange(-1, 1 + 1/fs, 1/fs)
     s = n/(2*np.pi*f)
-    wavelet = np.exp(2*np.pi*1j*f*t) * np.exp(-t**2/(2*s**2))
-
-    # fft params
-    n_sig = len(sig)
-    n_wavelet = len(wavelet)
-    n_conv = n_wavelet + n_sig - 1
-    n_half_wavelet = len(wavelet) // 2
-
-    # convolultion
-    sig_fft = fft(sig, n_conv)
-    wavelet_fft = fft(wavelet, n_conv)
-    conv_result = ifft(sig_fft * wavelet_fft) * (np.sqrt(s)/20) # scaling factor = np.squrt(s)/20
-    conv_result = conv_result[n_half_wavelet:-n_half_wavelet]   # bc that's what mike used in the text
-
-    return(conv_result) # removed amp and pha outputs for more straight forward list comprehension
-
-def compute_mwt(signal, fs, peak_freq, n):
-    '''
-    Takes a timeseries and computes morlet wavelet convolution.
-    First, generates a wavelet of peak frequency = peak_freq, then takes fft of signal and fft of
-    wavelet. Then takes ift of the product of fft of signal and fft of wavelet and cuts off the
-    "wings" of convolution (1/2 length wavelet from either end). I know the length of our wavelet
-    is an odd number of points (fs=2000) so it's more convenient to use floor division here.
-    Lastly, extracts amplitude and phase from the result of convolution.
-
-    Inputs:
-    signal is a list of timeseries data
-    sampling rat, peak_freq, n are int
-
-    Outputs:
-    the result of convolution is a list of complex coefficients
-    extracted ampltidue is a list of real numbers
-    extract phase is a list of angles given in radians
-    '''
-
-    sig = signal
-    fs = fs
-
-    # generating our wavelet
-    f = peak_freq
-    t = np.arange(-1, 1 + 1/fs, 1/fs)
-    s = n/(2*np.pi*f)
     wavelet = np.sqrt(1/(s*np.sqrt(np.pi)))*np.exp(2*np.pi*1j*f*t) * np.exp(-t**2/((2*s)**2))
 
     # fft params
@@ -497,7 +455,7 @@ def norm(means, baseline_mean):
     for i in range(len(baseline_mean)):
         norm = means[i] / baseline_mean[i]
         mean_norm.append(norm)
-    return(np.array(mean_norm))
+    return np.array(mean_norm)
 
 def baseline_norm(Tr_pow, s_pre, s_post, epoch_len, pre_bline):
     # calculate epoch and baseline indices from s_pre, s_post. I hate always doing
@@ -561,7 +519,7 @@ def spectrogram(trials, freqs, n_dict, s_pre, s_post, epoch_len, pre_bline):
                     norm = 10*np.log10(means[i] / baseline_mean[i])
                 mean_norm.append(norm)
 
-            return(np.array(mean_norm))
+            return np.array(mean_norm)
 
         fs = 2000
         epoch_samples = epoch_len * fs                              # the duration of our entire epoch we want to cut out
@@ -872,7 +830,7 @@ def get_bin_indices(epoch):
     # this list (of lists) comprehension looks ridiculous
     epoch_bin_indices = [[index for lst in pha_bin for index in lst] for pha_bin in epoch_bin_indices]
 
-    return(epoch_bin_bool)
+    return epoch_bin_bool 
 
 def get_mwtpower_by_phasebins(trial_n_f_n, trial_n_bin, n_freqs, n_bins):
     '''
@@ -890,7 +848,7 @@ def get_mwtpower_by_phasebins(trial_n_f_n, trial_n_bin, n_freqs, n_bins):
 
         sample_i.append(sample_i_bin_j)
 
-    return(sample_i)
+    return sample_i 
 
 # next just extract and normalize power as before using mwt
 # then just index the power by the phase of the signal (extracted
@@ -1754,7 +1712,7 @@ def get_PACz(pha, pwr, PAC, n_permutations, trial_dims):
     # normalize
     PACz = (PAC - np.mean(permutedPAC)) / np.std(permutedPAC)
 
-    return(PACz)
+    return PACz
 
 def PACz_wrapped(trials_pha, trials_pow, freqs4phase, freqs4power, s_pre, s_post, epoch_len, pre_bline, t_start, t_end):
     '''
@@ -1780,25 +1738,6 @@ def PACz_wrapped(trials_pha, trials_pow, freqs4phase, freqs4power, s_pre, s_post
         print(freq4pha)
 
     return np.array(PACz_byphasef).T
-        ##### from old green/white analyses #####
-
-
-
-
-
-# def get_timeshifted_null(x_trials):
-#     '''
-#     x is a list of lists. Each list in x is a trial of len = to samples, the values
-#     of in each trial are any kind of timeseries data, i.e. instantaneous pwr/pha etc.
-#     '''
-#     t_shifted_trials = []
-#     for trial in pwr_trials:
-#         rand_t = random.randrange(len(trial))
-#         t_shifted_trial = np.concatenate([trial[rand_t:],trial[:rand_t]])
-#
-#         t_shifted_trials.append(t_shifted_trial)
-#
-#     return t_shifted_trials
 
 def get_timeshifted_null(x_trials):
     '''
@@ -1824,9 +1763,6 @@ def get_timeshifted_null(x_trials):
 
 
 def get_zscored_PLI(x_trials, y_trials, n_permutations, observed_PLI, s_pre, s_post, pre_bline, epoch_len, freqs, ns):
-    '''
-
-    '''
     permuted_PLI = []
     for i in range(0, n_permutations):
 
@@ -1886,7 +1822,7 @@ def get_zscored_PLI(x_trials, y_trials, n_permutations, observed_PLI, s_pre, s_p
 
     PLIz = (observed_PLI -  permuted_avg) / permuted_std
 
-    return(PLIz)
+    return PLIz 
 
 
 
@@ -1934,9 +1870,6 @@ def ITPC(trials, s_pre, s_post, pre_bline, epoch_len, freqs): #epoch_len = 2
 
 
 def get_zscored_ITPC(x_trials, n_permutations, observed_ITPC, s_pre, s_post, pre_bline, epoch_len, freqs):
-    '''
-
-    '''
     permuted_ITPC = []
     for i in range(0, n_permutations):
         if i < 100:
@@ -1996,7 +1929,7 @@ def get_zscored_ITPC(x_trials, n_permutations, observed_ITPC, s_pre, s_post, pre
 
     ITPCz = (observed_ITPC -  permuted_avg) / permuted_std
 
-    return(ITPCz)
+    return ITPCz 
 
 
 def PACz_cm(R1_trials, R2_trials, R1R2_label, n_perm, epoch_len, pre_bline, fs4pha, fs4pow, t_start, t_end, global_labels, s_pre):
@@ -2394,6 +2327,7 @@ def get_composite_signal_PAC_dist(trials_pha, trials_pow, s_pre, s_post, epoch_l
         epoch_bin_indices = [[index for lst in pha_bin for index in lst] for pha_bin in epoch_bin_indices]
 
         return epoch_bin_bool
+        
     # theta phase time series
     fs = 2000
     epoch_samples = epoch_len * fs
@@ -2639,7 +2573,7 @@ def zscore_MI_pwrpha_dist(trials_pha, trials_pow, s_pre, s_post, epoch_len, pre_
         # this list (of lists) comprehension looks ridiculous
         epoch_bin_indices = [[index for lst in pha_bin for index in lst] for pha_bin in epoch_bin_indices]
 
-        return(epoch_bin_bool)
+        return epoch_bin_bool 
 
     # theta phase time series\
     fs = 2000
@@ -2760,7 +2694,7 @@ def norm_power_bytrial(trials, freqs, n_dict, s_pre, s_post, epoch_len, pre_blin
                     norm = 10*np.log10(means[i] / baseline_mean[i])
                 mean_norm.append(norm)
 
-            return(np.array(mean_norm))
+            return np.array(mean_norm) 
 
         fs = 2000
         epoch_samples = epoch_len * fs                              # the duration of our entire epoch we want to cut out
