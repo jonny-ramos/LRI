@@ -20,8 +20,8 @@ args = parser.parse_args()
 #cue1_data = '/Users/jonathanramos/Desktop/CCA_2023/curation_2023/data_curated_10_2023/CUE1/*.npy'
 
 
-cue0_data = '/Users/jonathanramos/Desktop/CCA_2023/LFP_analysis/data_curated_11_2023/CUE0/*.npy'
-cue1_data = '/Users/jonathanramos/Desktop/CCA_2023/LFP_analysis/data_curated_11_2023/CUE1/*.npy'
+cue0_data = 'data/data_curated_11_2023/CUE0/*.npy'
+cue1_data = 'data/data_curated_11_2023/CUE1/*.npy'
 
 if args.spectrogram:
 # CUE0
