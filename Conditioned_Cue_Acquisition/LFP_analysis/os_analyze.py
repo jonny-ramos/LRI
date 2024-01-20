@@ -9,6 +9,7 @@ parser.add_argument('-it', '--itpc', action='store_true', help='if true, compute
 parser.add_argument('-is', '--ispc', action='store_true', help='if true, compute and plot ispcs')
 parser.add_argument('-pl', '--pli', action='store_true', help='if true, compute and plot plis')
 parser.add_argument('-er', '--erp', action='store_true', help='if true, compute and plot erps')
+parser.add_argument('-pk', '--erp_peak', action='store_true', help='if true, compute erp P1, N1, P2 peaks')
 parser.add_argument('-pd', '--pwrphadist', action='store_true', help='if true, compute and plot distribution of average power over binned phase')
 parser.add_argument('-wn', '--window', action='store_true', help='if true, compute mean pwr and coupling metrics over time freq windows, write to csv')
 parser.add_argument('-xc', '--lagxcorr', action='store_true', help='if true, compute pwr envelope for each region, plot lag cross correlations')
@@ -105,6 +106,20 @@ if args.erp:
     if not len(files) == 0:
         for f in files:
             os.system(f'python3 erp.py {f}')
+
+if args.erp_peak:
+    # CUE0
+    files = glob.glob(cue0_data)
+    if not len(files) == 0:
+        for f in files:
+            os.system(f'python3 peak.py {f}')
+
+    # CUE1
+    files = glob.glob(cue1_data)
+    if not len(files) == 0:
+        for f in files:
+            print(f, ' \t\tERP PEAK')
+            os.system(f'python3 peak.py {f}')
 
 if args.pwrphadist:
     # CUE0
