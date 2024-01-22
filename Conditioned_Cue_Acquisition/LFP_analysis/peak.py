@@ -106,7 +106,7 @@ def main():
     ti = 100
     tj = 200
     t_start, t_stop = slice_index(ti, tj, fs, t0)
-    N1_i, N1_j = erp_peak(erp_sig, t_start, t_stop)
+    N1_i, N1_j = erp_peak(erp_sig, t_start, t_stop, peak='N')
     N1 = avg_peak(data, N1_i, N1_j)
 
     # search for positive peak within first 200-300 ms (P2?)
