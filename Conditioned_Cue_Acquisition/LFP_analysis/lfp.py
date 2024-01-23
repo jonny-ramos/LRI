@@ -10,6 +10,14 @@ from scipy.signal import butter, filtfilt, hilbert
 def load_data(file):
     '''
     loads in data file. returns label and dict of curated data.
+    args:
+        file: str, path of data file to load
+    return:
+        label: str, specific identifying information for data; for writing files
+        data: dict(t), t: the number of trials;
+            each key:val pair in dict is constructed such that
+            key: str, denoting trial_n, ex: "group1_rat1_trial1"
+            val: np.ndarray(N), N: the number of samples (timepoints)
     '''
     # files = glob.glob('/Users/jonathanramos/Desktop/CCA NEW ANALYSES/curation_2023/data_curated/CUE0/*.npy')
     f = file
@@ -111,6 +119,17 @@ def baseline_norm(raw_pwr, bline_index, db=False):
 def itpc(angles):
     '''
     small fn to quickly compute ITPC in the shape of our data (list of list of lists)
+    takes 3D matrix of angles (trial, freq, time) and computes inter trial phase
+    coupling for each sample (for each f) across trials. Note that input is 3D
+    array and output is 2D array.
+    args:
+        angles: np.ndarray(t, f, N); t: the number of trials, f: the number of
+            frequencies for which intantaneous phase angles were computed, N: the
+            number of samples (timepoints)
+    return:
+        ITPCs: np.ndarray(f, N); f the number of frequencies for which
+            intantaneous phase angles were comnuted, N: the number of samples
+            (timepoints)
     '''
     angles_T = np.transpose(angles)
 
@@ -129,6 +148,22 @@ def itpc(angles):
 
 # intersite phase clustering
 def ispc(R1_angles, R2_angles):
+    '''
+    takes instantaneous phase angles from two regions and computes intersite
+    phase coupling between them for each sample (for each frequency) across
+    trials. Note that both inputs are 3D array and outpus is a 2D array.
+    args:
+        R1_angles: np.ndarray(t, f, N); t: the number of trials, f: the number
+            of frequencies for which instantaneous phase angles were computed,
+            N: the number of samples (timepoints)
+        R2_angles: np.ndarray(t, f, N); t: the numbe of trials, f: the number
+            of frequencies for which instantaneous pahse angles were computed,
+            N: the number of samples (timepoints)
+    return:
+        R1_R2_ISPCs: np.ndarray(f, N): f: the number of frequncies for which
+            instantaneous phase angles were computed, N: the number of samples
+            (timepoints)
+    '''
     R1_angles_T = np.transpose(R1_angles)
     R2_angles_T = np.transpose(R2_angles)
 
@@ -153,9 +188,20 @@ def ispc(R1_angles, R2_angles):
 
 def pli(R1_angles, R2_angles):
     '''
-    R1_angles, R2_angles are timeseries of instantaneous phase angles from respective
-    regions R1 and R2 for a list of trials. Both are expected to be a 2D array organized
-    first by f then by sample.
+    takes instantaneous phase angles from two regions and computes phase lag
+    index between them for each sample (for each frequency) across trials.
+    Note that both inputs are 3D array and outpus is a 2D array.
+    args:
+        R1_angles: np.ndarray(t, f, N); t: the number of trials, f: the number
+            of frequencies for which instantaneous phase angles were computed,
+            N: the number of samples (timepoints)
+        R2_angles: np.ndarray(t, f, N); t: the numbe of trials, f: the number
+            of frequencies for which instantaneous pahse angles were computed,
+            N: the number of samples (timepoints)
+    return:
+        R1_R2_ISPCs: np.ndarray(f, N): f: the number of frequncies for which
+            instantaneous phase angles were computed, N: the number of samples
+            (timepoints)
     '''
     R1_angles_T = np.transpose(R1_angles)
     R2_angles_T = np.transpose(R2_angles)
@@ -192,12 +238,35 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order):
     return y
 
 def filter_hilbert(sig, lc, hc, fs, order):
+    '''
+    wrapper function to carry out filter hilbert transform consisting of a
+    bandpass filter followed by hilbert transform.
+    args:
+        sig: np.ndarray(N); N: the number of samples (timepoints)
+        lc: int, float; denotes low cut of bandpass filter
+        hc: int, float; denotes high cut of bandpass filter
+        fs: int, the sampling rate
+        order: int, the filter order
+    return:
+        asig: np.ndarray(t); t: the number of samples (timepoints), the analytic
+            signal
+    '''
     filt = butter_bandpass_filter(sig, lc, hc, fs, order)
     asig = hilbert(filt)
 
     return asig
 
 def bin_pha(epoch):
+    '''
+    takes epoched section of instantaneous phase angles; returns bins, each of
+    size pi/15, ranging from negative pi to positive pi.
+    args:
+        epoch: np.ndarray(N); N the number of samples (timeponts); instantaneous
+            phase angles (generally extracted by either mwt or filter-hilbert)
+    retun:
+        epoch_bin_bool: np.ndarray(30, N); 30: the number of bins, N; the number
+            of samples (timepoints). Bools for indexing by binned phase.
+    '''
     epoch_bin_bool = []
     for i in np.arange(-15,15):
         bin_low = (np.pi*i)/15
@@ -213,6 +282,16 @@ def bin_pha(epoch):
 
 
 def modulation_index(binned_pwr, pha_bins):
+    '''
+    takes binned power and phase bins, computes modulation index.
+    args:
+        binned_pwr: np.ndarray(b); b: the number of phase bins over which power
+            was binned and averaged per bin
+        pha_bins: np.ndarray(b, N); b: the number phase bins, N: the number of
+            samples
+    return:
+        mi: float, the modulation index
+    '''
     n = len(pha_bins)
 
     # construct p(j): normalize by dividing each bin value by the sum over the bins
@@ -222,7 +301,9 @@ def modulation_index(binned_pwr, pha_bins):
     h = (-1)*np.sum([np.log(p_j)*p_j for p_j in p])
 
     # Kullback-Leibler distance KL
-    kl = np.log(len(pha_bins)) - h
+    kl = np.log(n) - h
 
     # Tort et al 2008 Modulation Index
-    return kl / np.log(len(pha_bins))
+    mi = kl / np.log(n)
+
+    return mi
