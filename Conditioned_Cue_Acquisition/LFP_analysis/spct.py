@@ -58,6 +58,10 @@ def main():
                 # result is baseline=[400:1400], plot=[1400:3400], t=0 @ 2000
                 # or in terms of mwt slice: [0:1000], [1000:3000], t=0 @ 1600; therefore b_i=1000
                 # or in terms of plot slice: [-1000:0], [0:2000], t=0 @ 600; therefore t_0=600
+
+    ### note need new slice indices for long HPC_epochs
+    b_i = 1000
+    t_0 = 2000
     if args.nlow:
         ns = np.linspace(3,6, len(freqs))               # ns for low freq
     else:
@@ -72,7 +76,8 @@ def main():
     norm_trials = []
     for sig in data:
         raw_pwr = [abs(compute_mwt(sig, fs, f, n_dict[f]))**2 for f in freqs]
-        raw_pwr = [f_pwr[400:3400] for f_pwr in raw_pwr ] # cut off edges we don't want to plot
+        # raw_pwr = [f_pwr[400:3400] for f_pwr in raw_pwr] # cut off edges we don't want to plot
+        raw_pwr = [f_pwr[1000:(len(f_pwr) - 1000)] for f_pwr in raw_pwr]
         norm_pwr =baseline_norm(raw_pwr, b_i, db=False)
         norm_trials.append(norm_pwr)
 

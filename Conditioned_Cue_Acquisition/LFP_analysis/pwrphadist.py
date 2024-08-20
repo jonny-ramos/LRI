@@ -5,7 +5,7 @@ import sys
 import argparse
 from numpy.fft import fft, ifft
 from scipy.signal import butter, filtfilt, hilbert
-from lfp import load_data, filter_hilbert, bin_pha, modulation_index
+from lfp import load_data, baseline_norm, filter_hilbert, bin_pha, modulation_index
 
 parser = argparse.ArgumentParser(description='loads in dict of trialized recording data from two regions and plots mean power by binned phase')
 parser.add_argument('path_r1', metavar='<path>', help='path of curated data to load from region 1, r1')

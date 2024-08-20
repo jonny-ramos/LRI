@@ -28,8 +28,11 @@ def curate_trials(d_trials):
         plt.pause(.001)
 
         keep_trial = input('Keep trial? Y/N: ')
-        while keep_trial.lower() != 'y' and keep_trial.lower() != 'n' and keep_trial.lower() != 's':
-            print('That was not a valid response. Please enter Y/N')
+        responses = set(['y', 'n', 's', 'quit'])
+        #while keep_trial.lower() != 'y' and keep_trial.lower() != 'n' and keep_trial.lower() != 's':
+
+        while keep_trial.lower() not in responses:
+            print('That was not a valid response. Please enter Y/N. type help for help')
             keep_trial = input('Keep trial? Y/N: ')
 
         # keep trial as val if user inputs yes
@@ -61,6 +64,11 @@ def curate_trials(d_trials):
                 elif keep_trial.lower() == 'n':
                     keep_trials.update({key: None})
 
+                elif keep_trial.lower() == 'quit':
+                    sys.exit()
+
+        elif keep_trial.lower() == 'quit':
+            sys.exit()
 
         plt.close()
 
@@ -77,6 +85,60 @@ def dictfilt(curr_d, ref_d):
             filt_d.update({key: curr_d[key]})
 
     return filt_d
+
+def rms(x):
+    return np.sqrt(np.mean(np.array(x) ** 2))
+
+def rat_rms(d_trials):
+    rats = ['Ephys5_rat2','Ephys7_rat2','Ephys9_rat2','Ephys10_rat1','Ephys5_rat1','Ephys6_rat1','Ephys9_rat1','Ephys11_rat1']
+    keys = list(d_trials.keys())
+
+    rat_rmss = []
+    grouped_trials = []
+    for rat in rats:
+        rat_keys = [k for k in keys if rat in k]
+        rat_trials = np.array([d_trials[k] for k in rat_keys])
+
+        if not len(rat_trials) == 0:
+            concat = np.concatenate(rat_trials)
+            rat_rms = rms(concat)
+            rat_rmss.append((rat, rat_rms))
+
+            grouped_trials.append((rat, dict(zip(rat_keys, list(rat_trials)))))
+
+    return dict(rat_rmss), dict(grouped_trials)
+
+def windowed_rms(trial, step=500, n_samples=18000):
+    return [rms(trial[i:i+step]) for i in np.arange(0,n_samples,step)]
+
+def rms_filter(PFC_rms, HPC_rms, PFC_trials, HPC_trials, thresh=1.8):
+    assert len(PFC_trials) == len(HPC_trials)
+    assert PFC_trials.keys() == HPC_trials.keys()
+
+    # PFC filter
+    PFC_keys_filt = []
+    for key in PFC_trials.keys():
+        rmss = windowed_rms(PFC_trials[key])
+        if np.all(np.array(rmss) / PFC_rms < thresh):
+            PFC_keys_filt.append(key)
+
+    # HPC filter
+    HPC_keys_filt = []
+    for key in HPC_trials.keys():
+        rmss = windowed_rms(HPC_trials[key])
+        if np.all(np.array(rmss) / HPC_rms < thresh):
+            HPC_keys_filt.append(key)
+
+    # sorted list of set intersection between PFC and HPC filters
+    inter = set(PFC_keys_filt).intersection(set(HPC_keys_filt))
+    inter = sorted(list(inter), key=lambda x: int(x.split('trial')[-1]))
+
+    # building new dictionaries from filtered key list
+    PFC_filt = dict([(k, PFC_trials[k]) for k in inter])
+    HPC_filt = dict([(k, HPC_trials[k]) for k in inter])
+    print(f'{len(PFC_trials) - len(PFC_filt)} trials removed via rms threshold (rms={thresh})')
+
+    return PFC_filt, HPC_filt
 
 def main():
     '''
@@ -95,11 +157,28 @@ def main():
     assert len(PFC) == len(HPC)
     assert set(PFC.keys()) == set(HPC.keys())
 
+    ##### add rms thresholding here again ? maybe.
+    d_PFC_rms, d_PFC = rat_rms(PFC)
+    d_HPC_rms, d_HPC = rat_rms(HPC)
+    assert d_PFC_rms.keys() == d_HPC_rms.keys() == d_PFC.keys() == d_HPC.keys()
+
+    # for each rat, apply rms threshold, build larger dict containing filtered data from all rats
+    PFC_filt = {}
+    HPC_filt = {}
+    for rat in d_PFC_rms.keys():
+        PFC_rms, HPC_rms = d_PFC_rms[rat], d_HPC_rms[rat]
+        PFC_trials, HPC_trials = d_PFC[rat], d_HPC[rat]
+
+        rat_PFC_filt, rat_HPC_filt = rms_filter(PFC_rms, HPC_rms, PFC_trials, HPC_trials)
+
+        PFC_filt = dict(**PFC_filt, **rat_PFC_filt)
+        HPC_filt = dict(**HPC_filt, **rat_HPC_filt)
+
     print('\nbeginning PFC curation:')
-    curated_PFC = curate_trials(PFC)
+    curated_PFC = curate_trials(PFC_filt)
 
     print('\nbeginning HPC curation:')
-    curated_HPC = curate_trials(HPC)
+    curated_HPC = curate_trials(HPC_filt)
 
     print('\nnow merging curated curated trials across regions...')
     filtered_PFC = dictfilt(curated_PFC, curated_HPC)

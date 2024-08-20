@@ -25,11 +25,11 @@ def main():
     f.set_figheight(4)
     f.set_figwidth(7)
 
-    t0 = 2000
-    time = np.arange((0 - t0) / fs, (n - t0) / fs, 1/fs)
+    t_zero = 2000
+    time = np.arange((0 - t_zero) / fs, (n - t_zero) / fs, 1/fs)
     title = ' '.join(label.split('_'))
 
-    ax.plot(time[2000:3000], arr[2000:3000])
+    ax.plot(time, arr)
     ax.set_title(title, size=16)
     ax.set_xlabel('Time (ms), press @ t=0', fontsize=16)
     ax.set_ylabel('potential (µV)', fontsize=16)
@@ -37,7 +37,6 @@ def main():
     ax.tick_params(axis='y', labelsize=16)
 
     f.savefig(' '.join([title, 'ERP.png']), bbox_inches='tight', dpi=600)
-    np.save('_'.join([title, 'ERP.npy']), arr)
 
     sys.exit()
 
