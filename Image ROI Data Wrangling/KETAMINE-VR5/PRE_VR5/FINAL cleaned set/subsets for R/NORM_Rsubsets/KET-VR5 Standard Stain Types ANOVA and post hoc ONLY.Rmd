@@ -1,0 +1,497 @@
+---
+title: "VR5-KET Image Data ANOVA"
+author: "Jonathan Ramos"
+date: "2024-03-12"
+output: pdf_document
+---
+
+```{r setup}
+library(ggplot2)
+library(ggpubr)
+library(car) # For levene.test() function
+library(emmeans)
+```
+
+# Stats in Python were weird
+
+Yesterday I did all the ANOVAs and post hoc tests for the standard stain types (normalized intensity, mean cell counts). I spot checked a few in prism and found that all the main effect F values were slightly different. The interaction effects all agree. Looking into this issue a little deeper, it seems that R agrees with SPSS which agrees with Prism and so I will just have to repeat these in R.
+
+# EDA and ANOVA function
+This function performs the same type of ANOVA as performed in graphpad prism. In addition, performs some exploratory data analysis to assess normality and homogeneity of variances (both quantitatively and qualitatively)
+
+```{r}
+Sidak <- function(pvals)
+  # takes a vector of p-values and corrects p-values according to 
+  # Sidaks method for multiple comparisons (1967)
+  #
+  # Jonathan Ramos 3/12/2024
+  {
+  adjusted <- c()
+  j <- length(pvals)
+  
+  for (i in 1:j){
+    adj_p <- 1-(1-pvals[i])^j
+    adjusted <- c(adjusted, adj_p)
+  }
+  return(adjusted)
+
+}
+
+eda_anova <- function(fname)
+  # takes a filname, loads data from csv; data 4 columns:
+  # react_treat, react, treat, and norm_int (response var)
+  # react_treat is just react and treat in one string separated by "_"
+  # builds factor cols for categorical cols (norm_int is numeric, all others are categorical)
+  # then performs the following tasks:
+  # checks assumptions of normality with qqplot and shapiro wilk tests
+  # checks assumptions of equal variances with box plot and levene test
+  # performs 2way ANOVA (2 by 2, react by treat)
+  # performs post hoc pairwise comparisons (emmeans of levels of react by treat
+  # and emmeans of levels of treat by react)
+  # prints out all statistical test results and returns plot objects
+  # for the two plots: the qqplots and the box plots
+  # 
+  # Jonathan Ramos 3/12/2024
+
+  {
+  df <- read.csv(fname, header=TRUE, sep=",")
+  df$react_treat_factor <- as.factor(df$react_treat)
+  df$react_factor <- as.factor(df$react)
+  df$treat_factor <- as.factor(df$treat)
+  
+  ### check assumption of normality
+  # quantitative assessment
+  # print(tapply(df$norm_int, df$react_treat_factor, shapiro.test))
+  
+  # qualitative assessment
+  g <- ggqqplot(df, x="norm_int", facet.by=c("treat_factor", "react_factor"))
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  # print(leveneTest(y = df$norm_int, group=df$react_treat_factor, center='mean'))
+  
+  # qualitative assessment
+  f <- ggplot(df, aes(x=treat_factor, y=norm_int)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+    #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+    facet_wrap(~react_factor) +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  
+  # run the ANOVA, display summary
+  df.lm <- lm(norm_int ~ treat_factor + react_factor + treat_factor*react_factor, contrasts=list(treat_factor='contr.sum', react_factor ='contr.sum'), data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  print(df.III.aov)
+  
+  # post hoc pairwise comparisons
+  emm <- emmeans(df.lm, ~ treat_factor * react_factor)
+  p1 <- pairs(emm, simple="treat_factor", adjust="tukey")
+  p2 <- pairs(emm, simple="react_factor", adjust="tukey")
+  
+  # add col to summary dataframe containing sidak adjusted p-values
+  adjusted_p.value1 <- Sidak(summary(p1, adjust="tukey")$p.value)
+  s1 <- summary(p1)
+  s1['adjusted_p.value'] <- adjusted_p.value1
+  
+  adjusted_p.value2 <- Sidak(summary(p2, adjust="tukey")$p.value)
+  s2 <- summary(p2)
+  s2['adjusted_p.value'] <- adjusted_p.value2
+  
+  # display results
+  print(s1)
+  print(s2)
+  
+  return(list(g, f))
+}
+```
+
+## pulling out filenames 
+
+```{r}
+singles = list.files(pattern="KET-VR5_single")
+quads = list.files(pattern="KET-VR5_quad")
+pv = list.files(pattern="PV_coloc")
+cfos = list.files(pattern="cFos_coloc")
+npas4 = list.files(pattern="Npas4_coloc")
+wfa = list.files(pattern="WFA_coloc")
+```
+
+\newpage
+
+# Single cFos
+
+```{r}
+fname = singles[1]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Single Npas4
+
+```{r}
+fname = singles[2]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Single PV
+
+```{r}
+fname = singles[3]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Single WFA
+
+```{r}
+fname = singles[4]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# PV coloc w cFos
+
+```{r}
+fname = pv[1]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# PV coloc w cFos, Npas4
+
+```{r}
+fname = pv[2]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# PV coloc w cFos, WFA
+
+```{r}
+fname = pv[3]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# PV coloc w Npas4
+
+```{r}
+fname = pv[4]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# PV coloc w Npas4, WFA
+
+```{r}
+fname = pv[5]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# PV coloc w WFA
+
+```{r}
+fname = pv[6]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# cFos coloc w Npas4
+
+```{r}
+fname = cfos[1]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# cFos coloc w Npas4, WFA
+
+```{r}
+fname = cfos[2]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# cFos coloc w PV
+
+```{r}
+fname = cfos[3]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# cFos coloc w PV, Npas4
+
+```{r}
+fname = cfos[4]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# cFos coloc w PV, WFA
+
+```{r}
+fname = cfos[5]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# cFos coloc w WFA
+
+```{r}
+fname = cfos[6]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Npas4 coloc w cFos
+
+```{r}
+fname = npas4[1]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Npas4 coloc w cFos, WFA
+
+```{r}
+fname = npas4[2]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Npas4 coloc w PV
+
+```{r}
+fname = npas4[3]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+# Npas4 coloc w PV, cFos
+
+```{r}
+fname = npas4[4]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Npas4 coloc w PV, WFA
+
+```{r}
+fname = npas4[5]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# Npas4 coloc w WFA
+
+```{r}
+fname = npas4[6]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# WFA coloc w cFos
+
+```{r}
+fname = wfa[1]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# WFA coloc w cFos, Npas4
+
+```{r}
+fname = wfa[2]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# WFA coloc w Npas4
+
+```{r}
+fname = wfa[3]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# WFA coloc w PV
+
+```{r}
+fname = wfa[4]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# WFA coloc w PV, cFos
+
+```{r}
+fname = wfa[5]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# WFA coloc w PV, Npas4
+
+```{r}
+fname = wfa[6]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# quad cFos
+
+```{r}
+fname = quads[1]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# quad Npas4
+
+```{r}
+fname = quads[2]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# quad PV
+
+```{r}
+fname = quads[3]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```
+
+\newpage
+
+# quad WFA
+
+```{r}
+fname = quads[4]
+
+print(fname)
+figs = eda_anova(fname)
+print(fname)
+```

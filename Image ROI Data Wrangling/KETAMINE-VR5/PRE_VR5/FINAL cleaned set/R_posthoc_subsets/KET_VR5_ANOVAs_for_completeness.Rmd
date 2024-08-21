@@ -1,0 +1,532 @@
+---
+title: "KET_VR5 3way ANOVAs for Completeness: Checking Main Effect t-tests"
+author: "Jonathan Ramos"
+date: "2024-04-17"
+output: pdf_document
+---
+
+```{r setup}
+library(ggplot2)
+library(ggpubr)
+library(car) # For levene.test() function
+library(emmeans)
+library(stringr)
+library(gplots)
+require(gridExtra)
+library(knitr)
+library(plyr)
+```
+
+# Some post hoc t-tests need new ANOVAs
+
+I previously performed these ANOVAs in python but when I revisited these sets in R I skipped right to the post hoc. ANOVAs in python are terrible because the linear model is not properly specified (leading to differences in p values with R and Prism) and so really I should have repeated those 3way ANOVAs before performing the t-tests.
+
+In general if there is an interaction effect:
+
+  * we do not interpret the main effects 
+  * HOWEVER: there still may be a case to interpret the main effect in the presence of an interaction effect IF all data at one level of a particular factor are higher (or lower) than than all other data at a different level of that factor.
+
+For example, if we were interested in PV intensity and found that there is a 2way interaction between react and the presence of cFos, if PV intensity in cFos cells is high across the board compared to non-cFos cells, then we can still interpret the main effect of cFos (with a t-test) and separately conclude that PV intensity is generally higher if cFos was present. In particular for this document, we are trying to determine whether or not the triangles are well separated (a long the y axis) from the circles. Unfortunately there is no definitive test to make the determination with and here we rely on qualitative analysis.
+
+The 3way ANOVAs performed in this document are as follows:
+
+  * PV intensity: WFA+/- (reactivation by treatment by WFA) 3way
+  * PV intensity: Npas4+/- (reactivation by treatment by Npas4) 3way
+  * PV intensity: cFos+/- (reactivation by treatment by cFos) 3way
+  
+  * WFA intensity: PV+/- (reactivation by treatment by PV) 3way
+  * WFA intensity: cFos+/- (reactivation by treatment by cFos) 3way
+  * WFA intensity: Npas4+/- (reactivation by treatment by Npas4) 3way
+  
+  * Npas4 intensity: PV+/- (reactivation by treatment by PV) 3way
+  * Npas4 intensity: cFos+/- (reactivation by treatment by cFos) 3way
+  * Npas4 intensity: WFA+/- (reactivation by treatment by WFA) 3way
+  
+  * cFos intensity: Npas4+/- (reactivation by treatment by Npas4) 3way
+  * cFos intensity: PV+/- (reactivation by treatment by PV) 3way
+  * cFos intensity: WFA+/- (reactivation by treatment by WFA) 3way
+
+```{r}
+## Summarizes data.
+## Gives count, mean, standard deviation, standard error of the mean, and confidence interval (default 95%).
+##   data: a data frame.
+##   measurevar: the name of a column that contains the variable to be summariezed
+##   groupvars: a vector containing names of columns that contain grouping variables
+##   na.rm: a boolean that indicates whether to ignore NA's
+##   conf.interval: the percent range of the confidence interval (default is 95%)
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column    
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval: 
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+```
+
+
+\newpage
+
+# Single PV Norm Intensity
+
+```{r, fig.height=9, fig.width=7}
+PV <- read.csv('NORM_single_PV.csv', header=TRUE, sep=',')
+split <- str_split_fixed(PV$treatment, "_", 2)
+PV$react <- split[,1]
+PV$treat <- split[,2]
+ 
+PV$react_treat_factor <- as.factor(PV$treatment)
+PV$react_factor <- as.factor(PV$react)
+PV$treat_factor <- as.factor(PV$treat)
+PV$WFA_factor <- as.factor(PV$dummy_WFA)
+PV$Npas4_factor <- as.factor(PV$dummy_Npas4)
+PV$cFos_factor <- as.factor(PV$dummy_cFos)
+
+str(PV)
+```
+
+\newpage
+
+## PV, WFA+/-
+
+```{r, fig.height=9, fig.width=7}
+# WFA +/-
+PV.WFA.lm <- lm(norm_intensity ~ react_factor*treat_factor*WFA_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', WFA_factor='contr.sum'), data=PV)
+PV.WFA.aov <- car::Anova(PV.WFA.lm, type=3)
+print(PV.WFA.aov)
+
+PV_with_WFA <- PV[PV$dummy_WFA == 'True', 'norm_intensity']
+PV_without_WFA <- PV[PV$dummy_WFA == 'False', 'norm_intensity']
+t.test(PV_with_WFA, PV_without_WFA)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(PV, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~WFA_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm PV intensity, WFA+/-')
+
+PVc <- summarySE(PV, measurevar="norm_intensity", groupvars=c("WFA_factor","react", "treat"))
+g <- ggplot(PVc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(WFA_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=WFA_factor, size=4)) +
+  ggtitle('Norm PV intensity, WFA+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## PV, Npas4+/-
+
+```{r, fig.height=9, fig.width=7}
+# Npas4 +/-
+PV.Npas4.lm <- lm(norm_intensity ~ react_factor*treat_factor*Npas4_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', Npas4_factor='contr.sum'), data=PV)
+PV.Npas4.aov <- car::Anova(PV.Npas4.lm, type=3)
+print(PV.Npas4.aov)
+
+PV_with_Npas4 <- PV[PV$dummy_Npas4 == 'True', 'norm_intensity']
+PV_without_Npas4 <- PV[PV$dummy_Npas4 == 'False', 'norm_intensity']
+t.test(PV_with_Npas4, PV_without_Npas4)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(PV, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~Npas4_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm PV intensity, Npas4+/-')
+
+PVc <- summarySE(PV, measurevar="norm_intensity", groupvars=c("Npas4_factor","react", "treat"))
+g <- ggplot(PVc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(Npas4_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=Npas4_factor, size=4)) +
+  ggtitle('Norm PV intensity, Npas4+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## PV, cFos+/-
+
+```{r, fig.height=9, fig.width=7}
+# cFos +/-
+PV.cFos.lm <- lm(norm_intensity ~ react_factor*treat_factor*cFos_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', cFos_factor='contr.sum'), data=PV)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+PV_with_cFos <- PV[PV$dummy_cFos == 'True', 'norm_intensity']
+PV_without_cFos <- PV[PV$dummy_cFos == 'False', 'norm_intensity']
+t.test(PV_with_cFos, PV_without_cFos)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(PV, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~cFos_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm PV intensity, cFos+/-')
+
+PVc <- summarySE(PV, measurevar="norm_intensity", groupvars=c("cFos_factor","react", "treat"))
+g <- ggplot(PVc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(cFos_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=cFos_factor, size=4)) +
+  ggtitle('Norm PV intensity, cFos+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+# Single WFA Norm Intensity
+
+```{r, fig.height=9, fig.width=7}
+WFA <- read.csv('NORM_single_WFA.csv', header=TRUE, sep=',')
+split <- str_split_fixed(WFA$treatment, "_", 2)
+WFA$react <- split[,1]
+WFA$treat <- split[,2]
+ 
+WFA$react_treat_factor <- as.factor(WFA$treatment)
+WFA$react_factor <- as.factor(WFA$react)
+WFA$treat_factor <- as.factor(WFA$treat)
+WFA$PV_factor <- as.factor(WFA$dummy_PV)
+WFA$Npas4_factor <- as.factor(WFA$dummy_Npas4)
+WFA$cFos_factor <- as.factor(WFA$dummy_cFos)
+
+str(WFA)
+```
+
+\newpage
+
+## WFA, PV+/-
+
+```{r, fig.height=9, fig.width=7}
+# PV +/-
+WFA.PV.lm <- lm(norm_intensity ~ react_factor*treat_factor*PV_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', PV_factor='contr.sum'), data=WFA)
+WFA.PV.aov <- car::Anova(WFA.PV.lm, type=3)
+print(WFA.PV.aov)
+
+WFA_with_PV <- WFA[WFA$dummy_PV == 'True', 'norm_intensity']
+WFA_without_PV <- WFA[WFA$dummy_PV == 'False', 'norm_intensity']
+t.test(WFA_with_PV, WFA_without_PV)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(WFA, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~PV_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm WFA intensity, PV+/-')
+
+WFAc <- summarySE(WFA, measurevar="norm_intensity", groupvars=c("PV_factor","react", "treat"))
+g <- ggplot(WFAc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(PV_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=PV_factor, size=4)) +
+  ggtitle('Norm WFA intensity, WFA+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## WFA, Npas4+/-
+
+```{r, fig.height=9, fig.width=7}
+# Npas4 +/-
+WFA.Npas4.lm <- lm(norm_intensity ~ react_factor*treat_factor*Npas4_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', Npas4_factor='contr.sum'), data=WFA)
+WFA.Npas4.aov <- car::Anova(WFA.Npas4.lm, type=3)
+print(WFA.Npas4.aov)
+
+WFA_with_Npas4 <- WFA[WFA$dummy_Npas4 == 'True', 'norm_intensity']
+WFA_without_Npas4 <- WFA[WFA$dummy_Npas4 == 'False', 'norm_intensity']
+t.test(WFA_with_Npas4, WFA_without_Npas4)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(WFA, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~Npas4_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm WFA intensity, Npas4+/-')
+
+WFAc <- summarySE(WFA, measurevar="norm_intensity", groupvars=c("Npas4_factor","react", "treat"))
+g <- ggplot(WFAc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(Npas4_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=Npas4_factor, size=4)) +
+  ggtitle('Norm WFA intensity, Npas4+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## WFA, cFos+/-
+
+```{r, fig.height=9, fig.width=7}
+# cFos +/-
+WFA.cFos.lm <- lm(norm_intensity ~ react_factor*treat_factor*cFos_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', cFos_factor='contr.sum'), data=WFA)
+WFA.cFos.aov <- car::Anova(WFA.cFos.lm, type=3)
+print(WFA.cFos.aov)
+
+WFA_with_cFos <- WFA[WFA$dummy_cFos == 'True', 'norm_intensity']
+WFA_without_cFos <- WFA[WFA$dummy_cFos == 'False', 'norm_intensity']
+t.test(WFA_with_cFos, WFA_without_cFos)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(WFA, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~cFos_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm WFA intensity, cFos+/-')
+
+WFAc <- summarySE(WFA, measurevar="norm_intensity", groupvars=c("cFos_factor","react", "treat"))
+g <- ggplot(WFAc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(cFos_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=cFos_factor, size=4)) +
+  ggtitle('Norm WFA intensity, cFos+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+# Single cFos Norm Intensity
+
+```{r, fig.height=9, fig.width=7}
+cFos <- read.csv('NORM_single_cFos.csv', header=TRUE, sep=',')
+split <- str_split_fixed(cFos$treatment, "_", 2)
+cFos$react <- split[,1]
+cFos$treat <- split[,2]
+ 
+cFos$react_treat_factor <- as.factor(cFos$treatment)
+cFos$react_factor <- as.factor(cFos$react)
+cFos$treat_factor <- as.factor(cFos$treat)
+cFos$PV_factor <- as.factor(cFos$dummy_PV)
+cFos$Npas4_factor <- as.factor(cFos$dummy_Npas4)
+cFos$WFA_factor <- as.factor(cFos$dummy_WFA)
+
+str(cFos)
+```
+
+\newpage
+
+## cFos, PV+/-
+
+```{r, fig.height=9, fig.width=7}
+# PV +/-
+cFos.PV.lm <- lm(norm_intensity ~ react_factor*treat_factor*PV_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', PV_factor='contr.sum'), data=cFos)
+cFos.PV.aov <- car::Anova(cFos.PV.lm, type=3)
+print(cFos.PV.aov)
+
+cFos_with_PV <- cFos[cFos$dummy_PV == 'True', 'norm_intensity']
+cFos_without_PV <- cFos[cFos$dummy_PV == 'False', 'norm_intensity']
+t.test(cFos_with_PV, cFos_without_PV)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(cFos, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~PV_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm cFos intensity, PV+/-')
+
+cFosc <- summarySE(cFos, measurevar="norm_intensity", groupvars=c("PV_factor","react", "treat"))
+g <- ggplot(cFosc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(PV_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=PV_factor, size=4)) +
+  ggtitle('Norm cFos intensity, cFos+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## cFos, Npas4+/-
+
+```{r, fig.height=9, fig.width=7}
+# Npas4 +/-
+cFos.Npas4.lm <- lm(norm_intensity ~ react_factor*treat_factor*Npas4_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', Npas4_factor='contr.sum'), data=cFos)
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+cFos_with_Npas4 <- cFos[cFos$dummy_Npas4 == 'True', 'norm_intensity']
+cFos_without_Npas4 <- cFos[cFos$dummy_Npas4 == 'False', 'norm_intensity']
+t.test(cFos_with_Npas4, cFos_without_Npas4)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(cFos, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~Npas4_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm cFos intensity, Npas4+/-')
+
+cFosc <- summarySE(cFos, measurevar="norm_intensity", groupvars=c("Npas4_factor","react", "treat"))
+g <- ggplot(cFosc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(Npas4_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=Npas4_factor, size=4)) +
+  ggtitle('Norm cFos intensity, Npas4+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## cFos, WFA+/-
+
+```{r, fig.height=9, fig.width=7}
+# WFA +/-
+cFos.WFA.lm <- lm(norm_intensity ~ react_factor*treat_factor*WFA_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', WFA_factor='contr.sum'), data=cFos)
+cFos.WFA.aov <- car::Anova(cFos.WFA.lm, type=3)
+print(cFos.WFA.aov)
+
+cFos_with_WFA <- cFos[cFos$dummy_WFA == 'True', 'norm_intensity']
+cFos_without_WFA <- cFos[cFos$dummy_WFA == 'False', 'norm_intensity']
+t.test(cFos_with_WFA, cFos_without_WFA)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(cFos, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~WFA_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm cFos intensity, WFA+/-')
+
+cFosc <- summarySE(cFos, measurevar="norm_intensity", groupvars=c("WFA_factor","react", "treat"))
+g <- ggplot(cFosc, aes(x=react, y=norm_intensity, colour=treat, group=interaction(WFA_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=WFA_factor, size=4)) +
+  ggtitle('Norm cFos intensity, WFA+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+# Single Npas4 Norm Intensity
+
+```{r, fig.height=9, fig.width=7}
+Npas4 <- read.csv('NORM_single_Npas4.csv', header=TRUE, sep=',')
+split <- str_split_fixed(Npas4$treatment, "_", 2)
+Npas4$react <- split[,1]
+Npas4$treat <- split[,2]
+ 
+Npas4$react_treat_factor <- as.factor(Npas4$treatment)
+Npas4$react_factor <- as.factor(Npas4$react)
+Npas4$treat_factor <- as.factor(Npas4$treat)
+Npas4$PV_factor <- as.factor(Npas4$dummy_PV)
+Npas4$cFos_factor <- as.factor(Npas4$dummy_cFos)
+Npas4$WFA_factor <- as.factor(Npas4$dummy_WFA)
+
+str(Npas4)
+```
+
+\newpage
+
+## Npas4, PV+/-
+
+```{r, fig.height=9, fig.width=7}
+# PV +/-
+Npas4.PV.lm <- lm(norm_intensity ~ react_factor*treat_factor*PV_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', PV_factor='contr.sum'), data=Npas4)
+Npas4.PV.aov <- car::Anova(Npas4.PV.lm, type=3)
+print(Npas4.PV.aov)
+
+Npas4_with_PV <- Npas4[Npas4$dummy_PV == 'True', 'norm_intensity']
+Npas4_without_PV <- Npas4[Npas4$dummy_PV == 'False', 'norm_intensity']
+t.test(Npas4_with_PV, Npas4_without_PV)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(Npas4, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~PV_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm Npas4 intensity, PV+/-')
+
+Npas4c <- summarySE(Npas4, measurevar="norm_intensity", groupvars=c("PV_factor","react", "treat"))
+g <- ggplot(Npas4c, aes(x=react, y=norm_intensity, colour=treat, group=interaction(PV_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=PV_factor, size=4)) +
+  ggtitle('Norm Npas4 intensity, Npas4+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## Npas4, cFos+/-
+
+```{r, fig.height=9, fig.width=7}
+# cFos +/-
+Npas4.cFos.lm <- lm(norm_intensity ~ react_factor*treat_factor*cFos_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', cFos_factor='contr.sum'), data=Npas4)
+Npas4.cFos.aov <- car::Anova(Npas4.cFos.lm, type=3)
+print(Npas4.cFos.aov)
+
+Npas4_with_cFos <- Npas4[Npas4$dummy_cFos == 'True', 'norm_intensity']
+Npas4_without_cFos <- Npas4[Npas4$dummy_cFos == 'False', 'norm_intensity']
+t.test(Npas4_with_cFos, Npas4_without_cFos)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(Npas4, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~cFos_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm Npas4 intensity, cFos+/-')
+
+Npas4c <- summarySE(Npas4, measurevar="norm_intensity", groupvars=c("cFos_factor","react", "treat"))
+g <- ggplot(Npas4c, aes(x=react, y=norm_intensity, colour=treat, group=interaction(cFos_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=cFos_factor, size=4)) +
+  ggtitle('Norm Npas4 intensity, cFos+/-')
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## Npas4, WFA+/-
+
+```{r, fig.height=9, fig.width=7}
+# WFA +/-
+Npas4.WFA.lm <- lm(norm_intensity ~ react_factor*treat_factor*WFA_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', WFA_factor='contr.sum'), data=Npas4)
+Npas4.WFA.aov <- car::Anova(Npas4.WFA.lm, type=3)
+print(Npas4.WFA.aov)
+
+Npas4_with_WFA <- Npas4[Npas4$dummy_WFA == 'True', 'norm_intensity']
+Npas4_without_WFA <- Npas4[Npas4$dummy_WFA == 'False', 'norm_intensity']
+t.test(Npas4_with_WFA, Npas4_without_WFA)
+
+# plot change in means: Can we still consider a main effect in the presence of an interaction?
+f <- ggplot(Npas4, aes(x=treatment, y=norm_intensity)) + geom_boxplot(aes(fill=react_treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~WFA_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Norm Npas4 intensity, WFA+/-')
+
+Npas4c <- summarySE(Npas4, measurevar="norm_intensity", groupvars=c("WFA_factor","react", "treat"))
+g <- ggplot(Npas4c, aes(x=react, y=norm_intensity, colour=treat, group=interaction(WFA_factor, treat))) +
+  geom_errorbar(aes(ymin=norm_intensity-ci, ymax=norm_intensity+ci), width=.1) +
+  geom_line() +
+  geom_point(aes(shape=WFA_factor, size=4)) +
+  ggtitle('Norm Npas4 intensity, WFA+/-')
+grid.arrange(f, g, nrow=2)
+```

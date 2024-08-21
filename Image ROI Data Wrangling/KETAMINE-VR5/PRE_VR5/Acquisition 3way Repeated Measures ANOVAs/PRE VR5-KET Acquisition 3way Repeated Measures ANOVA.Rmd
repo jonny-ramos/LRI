@@ -1,0 +1,69 @@
+---
+title: "PRE VR5-KET Last 3 Days Acquisition"
+author: "Jonathan Ramos"
+date: "2024-04-12"
+output: pdf_document
+---
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(stringr)
+library(rstatix)
+```
+
+# Acquisition 3way Repeated Measures ANOVA
+
+I took these data from the prism file called "KETAMINE_BEHAVIOR_ALL.prism". In particular I created an aggregated csv with the data in long form (rather than wide form) from the following sheets:
+
+  * 6 mg/kg Acquisition Last 3 days (ALPs)
+  * 6 mg/kg Acquisition Last 3 days (ILPs) 
+  * 6 mg/kg Acquisition Last 3 days (Rewards) 
+
+In this markdown file I will perform three reactivation by treatment by day (2 x 2 x 3) repeated measures 3way ANOVAs; one each for active lever presses (ALP), inactive lever presses (ILP), and rewards. The Greenhouse Geisser correction is applied in all cases.
+
+(None of the ANOVAs have any significant main or interaction effects)
+
+```{r}
+l3d <- read.csv('PRE-VR5_Last3Days_Acquisition.csv', sep = ',', header = TRUE)
+l3d$day_factor <- as.factor(l3d$Day)
+l3d$react_factor <- as.factor(l3d$React)
+l3d$treat_factor <- as.factor(l3d$Treat)
+l3d$rat_factor <- as.factor(l3d$Rat_n)
+str(l3d)
+```
+
+## Active Lever Preses (ALP)
+```{r}
+res.aov <- anova_test(
+  data = l3d, dv = ALP, wid = rat_factor,
+  within = c(day_factor), between = c(treat_factor, react_factor)
+  )
+get_anova_table(res.aov, correction = 'GG')
+
+res.aov
+```
+
+## Inactive Lever Preses (ILP)
+```{r}
+res.aov <- anova_test(
+  data = l3d, dv = ILP, wid = rat_factor,
+  within = c(day_factor), between = c(treat_factor, react_factor)
+  )
+get_anova_table(res.aov, correction = 'GG')
+
+res.aov
+```
+
+## Rewards
+```{r}
+res.aov <- anova_test(
+  data = l3d, dv = Rewards, wid = rat_factor,
+  within = c(day_factor), between = c(treat_factor, react_factor)
+  )
+get_anova_table(res.aov, correction = 'GG')
+
+res.aov
+```

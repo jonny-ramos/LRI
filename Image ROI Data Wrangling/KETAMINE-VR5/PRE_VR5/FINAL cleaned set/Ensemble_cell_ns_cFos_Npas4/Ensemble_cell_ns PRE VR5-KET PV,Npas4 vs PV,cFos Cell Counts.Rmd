@@ -1,0 +1,322 @@
+---
+title: "PRE VR5-KET Npas4/cFos+/- vs cFos/Npas4+/- Cell Counts"
+author: "Jonathan Ramos"
+date: "2024-04-22"
+output: pdf_document
+---
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(stringr)
+library(rstatix)
+```
+
+# ANOVAs for Cell Counts
+
+I had previously looked for differences in mean cell counts between PV/cFos+/Npas4- and PV/Npas4+/cFos- cells to potentially disambiguate two distinct populations of PV cells. From my last R document I concluded the following:
+
+"In general we do not see any differences in the mean cell ns of cFos+/Npas4- vs Npas4+/cFos- however, once we consider whether there was a PNN, we can see that in Npas4+/cFos- there is a difference between PNN+ vs PNN- populations (but NOT in cFos+/Npas4-), in particular VR5_KET mean cell counts are down compared to VR5_SAL, and FR1_SAL mean cell counts are down compared to VR5_SAL. However, since there are so few of these stain type combinations observed per image (we are looking at a difference on the order of 1, maybe 2, cells per image), and only 5-7 rats per treatment, I would likely not consider that this data set powered up enough to adequately address this particular question."
+
+
+Here I aim to repeat this set of analyses with out restricting the counts to PV cells only. 
+
+The ANOVAs presented in this document are as follows:
+
+  * cFos+: Npas4- vs Npas4+ (reactivation by treatment by Npas4) 3way
+  * Npas4: cFos- vs cFos+ (reactivation by treatment by cFos) 3way
+  * cFos+/Npas4- vs Npas4+/cFos- (reactivation by treatment by "ensemble") 3way
+  * Npas4+/cFos-: WFA- vs WFA+ (reactivation by treatment by WFA) 3way
+  * cFos+/Npas4-: WFA- vs WFA+ (reactivation by treatment by WFA) 3way
+  
+Overall, I found no interactions worth following up, and so we are unable to conclude that there are two distinct populations of cFos vs Npas4 cells. The shape of the box plots appears to be somewhat compelling but again, there are only 5-7 ns per treatment combination and so unless these data were extremely tight, I would not consider that this experiment was powered up enough to adequately address this question, even looking beyond just PV cells. 
+
+
+```{r}
+##### reusing some function definitions for convenience
+Sidak <- function(pvals)
+  # takes a vector of p-values and corrects p-values according to 
+  # Sidaks method for multiple comparisons (1967)
+  #
+  # Jonathan Ramos 3/12/2024
+  {
+  adjusted <- c()
+  j <- length(pvals)
+  
+  for (i in 1:j){
+    adj_p <- 1-(1-pvals[i])^j
+    adjusted <- c(adjusted, adj_p)
+  }
+  return(adjusted)
+}
+
+eda_anova <- function(df, qual=TRUE, quant=TRUE)
+  # takes a filname, loads data from csv; data 4 columns:
+  # react_treat, react, treat, and norm_int (response var)
+  # react_treat is just react and treat in one string separated by "_"
+  # builds factor cols for categorical cols (norm_int is numeric, all others are categorical)
+  # then performs the following tasks:
+  # checks assumptions of normality with qqplot and shapiro wilk tests
+  # checks assumptions of equal variances with box plot and levene test
+  # performs 2way ANOVA (2 by 2, react by treat)
+  # performs post hoc pairwise comparisons (emmeans of levels of react by treat
+  # and emmeans of levels of treat by react)
+  # prints out all statistical test results and returns plot objects
+  # for the two plots: the qqplots and the box plots
+  # 
+  # Jonathan Ramos 3/12/2024
+
+  {
+  ### check assumption of normality
+  # quantitative assessment
+  if (quant) {
+    print(tapply(df$mean_cell_n, df$react_treat_factor, shapiro.test))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    g <- ggqqplot(df, x="mean_cell_n", facet.by=c("treat_factor", "react_factor"))
+  }
+  
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  if (quant) {
+    print(leveneTest(y = df$mean_cell_n, group=df$react_treat_factor, center='mean'))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    f <- ggplot(df, aes(x=treat_factor, y=mean_cell_n)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+      #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+      facet_wrap(~react_factor) +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  }
+
+  
+  # run the ANOVA, display summary
+  df.lm <- lm(mean_cell_n ~ treat_factor + react_factor + treat_factor*react_factor, contrasts=list(treat_factor='contr.sum', react_factor ='contr.sum'), data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  print(df.III.aov)
+  
+  # post hoc pairwise comparisons
+  emm <- emmeans(df.lm, ~ treat_factor * react_factor)
+  p1 <- pairs(emm, simple="treat_factor", adjust="tukey")
+  p2 <- pairs(emm, simple="react_factor", adjust="tukey")
+  
+  # add col to summary dataframe containing sidak adjusted p-values
+  adjusted_p.value1 <- Sidak(summary(p1, adjust="tukey")$p.value)
+  s1 <- summary(p1)
+  s1['adjusted_p.value'] <- adjusted_p.value1
+  
+  adjusted_p.value2 <- Sidak(summary(p2, adjust="tukey")$p.value)
+  s2 <- summary(p2)
+  s2['adjusted_p.value'] <- adjusted_p.value2
+  
+  # display results
+  print(s1)
+  print(s2)
+  
+  if (qual) {
+    return(list(g, f))
+  }
+}
+```
+
+## cFos: Npas4- vs Npas4+
+
+No 3way interaction to follow up on here.
+
+```{r}
+# loading in data
+cFos.Npas4m <- read.csv('cFos_Npas4m_COUNTS.csv')
+cFos.Npas4p <- read.csv('cFos_Npas4p_COUNTS.csv')
+
+# concat dataframes
+cFos.Npas4 <- rbind(cFos.Npas4m, cFos.Npas4p)
+
+# build dummy cols
+cFos.Npas4$react_factor <- as.factor(cFos.Npas4$react)
+cFos.Npas4$treat_factor <- as.factor(cFos.Npas4$treat)
+cFos.Npas4$Npas4_factor <- as.factor(cFos.Npas4$Npas4)
+str(cFos.Npas4)
+
+# 3way ANOVA
+cFos.Npas4.lm <- lm(mean_cell_n ~ react_factor*treat_factor*Npas4_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', Npas4_factor='contr.sum'), data=cFos.Npas4)
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+f <- ggplot(cFos.Npas4, aes(x=treatment, y=mean_cell_n)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~Npas4_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('cFos mean cell ns, Npas4+/-')
+f
+
+# just to be sure we didn't find anything
+# eda_anova(cFos.Npas4[cFos.Npas4$Npas4_factor == 'False',], qual=FALSE, quant=FALSE)
+
+# just to be sure we didn't find anything
+# eda_anova(cFos.Npas4[cFos.Npas4$Npas4_factor == 'True',], qual=FALSE, quant=FALSE)
+```
+
+## Npas4: cFos- vs cFos+
+
+No 3way interaction to follow up on here.
+
+```{r}
+# loading in data
+Npas4.cFosm <- read.csv('Npas4_cFosm_COUNTS.csv')
+Npas4.cFosp <- read.csv('Npas4_cFosp_COUNTS.csv')
+
+# concat dataframes
+Npas4.cFos <- rbind(Npas4.cFosm, Npas4.cFosp)
+
+# build dummy cols
+Npas4.cFos$react_factor <- as.factor(Npas4.cFos$react)
+Npas4.cFos$treat_factor <- as.factor(Npas4.cFos$treat)
+Npas4.cFos$cFos_factor <- as.factor(Npas4.cFos$cFos)
+str(Npas4.cFos)
+
+# 3way ANOVA
+Npas4.cFos.lm <- lm(mean_cell_n ~ react_factor*treat_factor*cFos_factor, contrasts = list(react_factor='contr.sum', treat_factor='contr.sum', cFos_factor='contr.sum'), data=Npas4.cFos)
+Npas4.cFos.aov <- car::Anova(Npas4.cFos.lm, type=3)
+print(Npas4.cFos.aov)
+
+f <- ggplot(Npas4.cFos, aes(x=treatment, y=mean_cell_n)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~cFos_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Npas4 mean cell ns, cFos+/-')
+f
+
+# just to be sure we didn't find anything
+# eda_anova(Npas4.cFos[Npas4.cFos$cFos_factor == 'False',], qual=FALSE, quant=FALSE)
+
+# just to be sure we didn't find anything
+# eda_anova(Npas4.cFos[Npas4.cFos$cFos_factor == 'True',], qual=FALSE, quant=FALSE)
+```
+
+# Testing directly cFos+/Npas4- vs Npas4+/cFos-
+As expected, this ANOVA doesn't come out.
+
+```{r}
+cFos.Npas4m$ensemble <- 'Npas4'
+Npas4.cFosm$ensemble <- 'cFos'
+
+cFos.Npas4m$react_factor <- as.factor(cFos.Npas4m$react)
+cFos.Npas4m$treat_factor <- as.factor(cFos.Npas4m$treat)
+Npas4.cFosm$react_factor <- as.factor(Npas4.cFosm$react)
+Npas4.cFosm$treat_factor <- as.factor(Npas4.cFosm$treat)
+
+cFos.Npas4m.ensemble <- cFos.Npas4m[c('mean_cell_n', 'react_factor', 'treat_factor', 'ensemble')]
+Npas4.cFosm.ensemble <- Npas4.cFosm[c('mean_cell_n', 'react_factor', 'treat_factor', 'ensemble')]
+
+ensemble <- rbind(cFos.Npas4m.ensemble, Npas4.cFosm.ensemble)
+ensemble$ensemble_factor <- as.factor(ensemble$ensemble)
+
+# 3way ANOVA: reactivation x treatment x ensemble (2 x 2 x 2) in PV cells
+ensemble.lm <- lm(mean_cell_n ~ treat_factor*react_factor*ensemble_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', ensemble_factor='contr.sum'), data=ensemble)
+ensemble.aov <- car::Anova(ensemble.lm, type=3)
+print(ensemble.aov) 
+
+
+f <- ggplot(ensemble, aes(x=interaction(treat_factor, react_factor), y=mean_cell_n)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~ensemble_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Npas4/cFos- vs cFos/Npas4- mean cell ns')
+f
+
+eda_anova(cFos.Npas4m.ensemble, qual=FALSE, quant=FALSE)
+eda_anova(Npas4.cFosm.ensemble, qual=FALSE, quant=FALSE)
+```
+
+# Do PNNs matter? cFos+/Npas4- vs Npas4+/cFos- mean cell ns in WFA+/- cells
+
+```{r}
+cFos.Npas4m.WFAm <- read.csv('cFos_Npas4m_WFAm_COUNTS.csv')
+cFos.Npas4m.WFAp <- read.csv('cFos_Npas4m_WFAp_COUNTS.csv')
+cFos.Npas4p.WFAm <- read.csv('cFos_Npas4p_WFAm_COUNTS.csv')
+cFos.Npas4p.WFAp <- read.csv('cFos_Npas4p_WFAp_COUNTS.csv')
+
+Npas4.cFosm.WFAm <- read.csv('Npas4_cFosm_WFAm_COUNTS.csv')
+Npas4.cFosm.WFAp <- read.csv('Npas4_cFosm_WFAp_COUNTS.csv')
+Npas4.cFosp.WFAm <- read.csv('Npas4_cFosp_WFAm_COUNTS.csv')
+Npas4.cFosp.WFAp <- read.csv('Npas4_cFosp_WFAp_COUNTS.csv')
+```
+
+## Npas4+/cFos- with or without PNNs
+
+only a main effect of WFA here, which makes sense since the number of Npas4 cells without PNNs vastly outnumbers the number of Npas4 cells with PNNs. 
+
+```{r}
+# slice
+Npas4.cFosm.WFAm <- Npas4.cFosm.WFAm[c('mean_cell_n', 'treatment', 'react', 'treat', 'WFA')]
+Npas4.cFosm.WFAp <- Npas4.cFosm.WFAp[c('mean_cell_n', 'treatment', 'react', 'treat', 'WFA')]
+
+# concat
+Npas4.cFosm.WFA <- rbind(Npas4.cFosm.WFAm, Npas4.cFosm.WFAp)
+
+# build dummy cols
+Npas4.cFosm.WFA$react_factor <- as.factor(Npas4.cFosm.WFA$react)
+Npas4.cFosm.WFA$treat_factor <- as.factor(Npas4.cFosm.WFA$treat)
+Npas4.cFosm.WFA$treatment_factor <- as.factor(Npas4.cFosm.WFA$treatment)
+Npas4.cFosm.WFA$WFA_factor <- as.factor(Npas4.cFosm.WFA$WFA)
+str(Npas4.cFosm.WFA)
+
+# 3way ANOVA: reactivation x treatment x WFA (2 x 2 x 2) in Npas4+/cFos-
+Npas4.cFosm.WFA.lm <- lm(mean_cell_n ~ treat_factor*react_factor*WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', WFA_factor='contr.sum'), data=Npas4.cFosm.WFA)
+Npas4.cFosm.WFA.aov <- car::Anova(Npas4.cFosm.WFA.lm, type=3)
+print(Npas4.cFosm.WFA.aov)
+
+f <- ggplot(Npas4.cFosm.WFA, aes(x=treatment, y=mean_cell_n)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~WFA_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('Npas4+/cFos- mean cell ns, WFA+/-')
+f
+
+Npas4.cFosm.WFAp <- Npas4.cFosm.WFA[Npas4.cFosm.WFA$WFA_factor == 'True',]
+Npas4.cFosm.WFAm <- Npas4.cFosm.WFA[Npas4.cFosm.WFA$WFA_factor == 'False',]
+
+eda_anova(Npas4.cFosm.WFAp, quant=FALSE, qual=TRUE)
+eda_anova(Npas4.cFosm.WFAm, quant=FALSE, qual=TRUE)
+```
+
+## cFos+/Npas4- with or without PNNs
+
+Again, we see a main effect of WFA since the number of cFos cells without PNNs vastly outnumbers the number of cFos cells with PNNs. No other interesting interactions to report here.
+
+```{r}
+# slice
+cFos.Npas4m.WFAm <- cFos.Npas4m.WFAm[c('mean_cell_n', 'treatment', 'react', 'treat', 'WFA')]
+cFos.Npas4m.WFAp <- cFos.Npas4m.WFAp[c('mean_cell_n', 'treatment', 'react', 'treat', 'WFA')]
+
+# concat
+cFos.Npas4m.WFA <- rbind(cFos.Npas4m.WFAm, cFos.Npas4m.WFAp)
+
+# build dummy cols
+cFos.Npas4m.WFA$react_factor <- as.factor(cFos.Npas4m.WFA$react)
+cFos.Npas4m.WFA$treat_factor <- as.factor(cFos.Npas4m.WFA$treat)
+cFos.Npas4m.WFA$treatment_factor <- as.factor(cFos.Npas4m.WFA$treatment)
+cFos.Npas4m.WFA$WFA_factor <- as.factor(cFos.Npas4m.WFA$WFA)
+str(cFos.Npas4m.WFA)
+
+# 3way ANOVA: reactivation x treatment x WFA (2 x 2 x 2) in cFos+/Npas4-
+cFos.Npas4m.WFA.lm <- lm(mean_cell_n ~ treat_factor*react_factor*WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', WFA_factor='contr.sum'), data=cFos.Npas4m.WFA)
+cFos.Npas4m.WFA.aov <- car::Anova(cFos.Npas4m.WFA.lm, type=3)
+print(cFos.Npas4m.WFA.aov)
+
+f <- ggplot(cFos.Npas4m.WFA, aes(x=treatment, y=mean_cell_n)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+  facet_wrap(~WFA_factor) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  ggtitle('cFos+/Npas4- mean cell ns, WFA+/-')
+f
+```
+
+
+

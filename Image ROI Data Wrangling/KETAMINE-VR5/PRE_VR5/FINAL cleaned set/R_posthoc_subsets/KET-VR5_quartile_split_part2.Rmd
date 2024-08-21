@@ -1,0 +1,449 @@
+---
+title: "KET_VR5_quartile_split_part2: Comparing q1 and q4 directly"
+author: "Jonathan Ramos"
+date: "2024-04-19"
+output: pdf_document
+---
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(stringr)
+require(gridExtra)
+```
+
+# Revisiting the quarttile split
+
+The previous results from the 1 vs all quartile split (top q vs bottom 3) were still a bit tricky to interpret. In general we saw that the presence of PNNs around PVs impacts the effect of reactivation and treatment in highly active PV cells (in the top quartile of cFos intensity):
+
+  * increased PV intensity in the VR5 condition if PNN was present
+  * decreased PV intensity in the KET condition if PNN was present
+  
+However, since the 4way ANOVA did NOT suggest that there was an interaction between treatment and reactivation, we had to interpret them separately. Since these to effects essentially act in opposite directions (in particlar for the group we are interested in: VR5_KET), putting these pieces together was not as straight forward as we would have liked. 
+
+In this R document I will repeat the analyses on the quartile split data but only consider the vs the bottom quartile of cFos/Npas4 activity, since it may be the case that the middle quartiles of cFos activity are "washing out" the over all pattern. Althought it is important to note that for some reason, my previous set of analyses suggested that it was the 3rd quartile of cFos activity that was driving the pattern.
+
+```{r}
+Sidak <- function(pvals)
+  # takes a vector of p-values and corrects p-values according to 
+  # Sidaks method for multiple comparisons (1967)
+  #
+  # Jonathan Ramos 3/12/2024
+  {
+  adjusted <- c()
+  j <- length(pvals)
+  
+  for (i in 1:j){
+    adj_p <- 1-(1-pvals[i])^j
+    adjusted <- c(adjusted, adj_p)
+  }
+  return(adjusted)
+
+}
+
+eda_anova <- function(df, qual=TRUE, quant=TRUE)
+  # takes a filname, loads data from csv; data 4 columns:
+  # react_treat, react, treat, and norm_int (response var)
+  # react_treat is just react and treat in one string separated by "_"
+  # builds factor cols for categorical cols (norm_int is numeric, all others are categorical)
+  # then performs the following tasks:
+  # checks assumptions of normality with qqplot and shapiro wilk tests
+  # checks assumptions of equal variances with box plot and levene test
+  # performs 2way ANOVA (2 by 2, react by treat)
+  # performs post hoc pairwise comparisons (emmeans of levels of react by treat
+  # and emmeans of levels of treat by react)
+  # prints out all statistical test results and returns plot objects
+  # for the two plots: the qqplots and the box plots
+  # 
+  # Jonathan Ramos 3/12/2024
+
+  {
+  ### check assumption of normality
+  # quantitative assessment
+  if (quant) {
+    print(tapply(df$norm_adjusted_intensity, df$react_treat_factor, shapiro.test))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    g <- ggqqplot(df, x="norm_adjusted_intensity", facet.by=c("treat_factor", "react_factor"))
+  }
+  
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  if (quant) {
+    print(leveneTest(y = df$norm_adjusted_intensity, group=df$react_treat_factor, center='mean'))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    f <- ggplot(df, aes(x=treat_factor, y=norm_adjusted_intensity)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+      #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+      facet_wrap(~react_factor) +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  }
+
+  
+  # run the ANOVA, display summary
+  df.lm <- lm(norm_adjusted_intensity ~ treat_factor + react_factor + treat_factor*react_factor, contrasts=list(treat_factor='contr.sum', react_factor ='contr.sum'), data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  print(df.III.aov)
+  
+  # post hoc pairwise comparisons
+  emm <- emmeans(df.lm, ~ treat_factor * react_factor)
+  p1 <- pairs(emm, simple="treat_factor", adjust="tukey")
+  p2 <- pairs(emm, simple="react_factor", adjust="tukey")
+  
+  # add col to summary dataframe containing sidak adjusted p-values
+  adjusted_p.value1 <- Sidak(summary(p1, adjust="tukey")$p.value)
+  s1 <- summary(p1)
+  s1['adjusted_p.value'] <- adjusted_p.value1
+  
+  adjusted_p.value2 <- Sidak(summary(p2, adjust="tukey")$p.value)
+  s2 <- summary(p2)
+  s2['adjusted_p.value'] <- adjusted_p.value2
+  
+  # display results
+  print(s1)
+  print(s2)
+  
+  if (qual) {
+    return(list(g, f))
+  }
+}
+```
+
+# PV, quartile split on cFos intensity (ignoring PNNs)
+
+## Revisting median split (reactivation by treatment by cFos_bin) 3way ANOVA
+
+I'm showing here (again) the 3way ANOVA based on the median split of cFos intensity so we can directly compareit  with the quartile split: is the pattern more extreme in the quartile split?
+
+From the 3way ANOVA below we can see that we have a F=5.4723 and p=0.01967, and so we may consider that the interaction between reactivation and treatment depenods on the level of cFos intensity. 
+
+From the two 2way ANOVAs performed at each level of cFos_bin, we can see that we only get an interaction effect for cFos_high (F=5.8773, p=0.01591), and so I followed up with contrasts of estimated marginal means which indicated that under the VR5 reactivation condition, there is a reduction in PV intensity in KET compared to SAL treated animals (t=-2.263, p=0.0481).
+
+Overall this indicates that in PV cells with high but not low cFos intensity, PV intensity is down in the VR5-KET condition compared to the VR5-SAL.
+
+```{r}
+PV.cFos <- read.csv('KET-VR5_PV_split_on_cFos_NORM.csv')
+PV.cFos$treat_factor <- as.factor(PV.cFos$treat)
+PV.cFos$react_factor <- as.factor(PV.cFos$react)
+PV.cFos$react_treat_factor <- as.factor(PV.cFos$treatment)
+PV.cFos$cFos_bin_factor <- as.factor(PV.cFos$cFos_bin)
+PV.cFos$dummy_WFA_factor <- as.factor(PV.cFos$dummy_WFA)
+
+# slicing out only the top and the bottom quartiles
+PV.cFos.high <- PV.cFos[PV.cFos$quartile == 'q4',]
+PV.cFos.low <- PV.cFos[PV.cFos$quartile == 'q1',]
+PV.cFos.highlow <- rbind(PV.cFos.high, PV.cFos.low)
+PV.cFos.highlow$quartile_factor <- as.factor(PV.cFos.highlow$quartile)
+
+### ANOVAs
+# 3way ANOVA: reactivation x treatment x quartile (2 x 2 x 2)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*cFos_bin_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', cFos_bin_factor='contr.sum'), data=PV.cFos)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+f <- ggplot(PV.cFos, aes(x=cFos_bin_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm PV intensity, split on cFos intensity (median)')
+f
+
+print('PV with cFos high (above median)')
+eda_anova(PV.cFos[PV.cFos$cFos_bin == 'cfos_high',], qual=TRUE, quant=FALSE)
+
+print('PV with cFos low (below median)')
+eda_anova(PV.cFos[PV.cFos$cFos_bin == 'cfos_low',], qual=TRUE, quant=FALSE)
+
+```
+
+\newpage
+
+## Top and bottom quartiles only
+
+Compared to the median split, the same pattern is still observed (reactivation by treatment by cFos_quartile effect F=4.7808, p=0.02961) but when I follow up with two 2way ANOVAs at each level of cFos_quartile we see a treatment by reactivation effect in the cFos_low but not cFos_high group. 
+
+Following up with multiple comparisons, we can conlcude that PV intensity is reduced in KET_VR5 compared to KET_SAL in the PV cells with very low cFos intensity.
+
+Both the median split and quartile split sets show similar patterns however we must draw slightly different conclusions (they kind of describe two sides of the same coin):
+  * in the median split, the reduction in PV intensity for high cFos PVs in the KET_VR5 condition is significant
+  * in the quartile split, the increase in PV intensity for low cFos PVs in the KET_VR5 condition is significant
+  
+
+```{r}
+# 3way ANOVA: reactivation x treatment x quartile (2 x 2 x 2)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum'), data=PV.cFos.highlow)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+f <- ggplot(PV.cFos.highlow, aes(x=quartile_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm PV intensity, split on cFos intensity (top vs bottom quartile)')
+f
+
+print('PV with cFos high (top quartile)')
+eda_anova(PV.cFos.high, qual=TRUE, quant=FALSE)
+
+print('PV with cFos low (bottom quartile)')
+eda_anova(PV.cFos.low, qual=TRUE, quant=FALSE)
+```
+
+# Do PNNs matter? 
+
+From the 4way ANOVAs below, we can see that neither the median split nor the quartile split data has a 4way interaction. This means that we CANNOT conclude that the interaction between reactivation, treatment and cFos intensity depends on whether a PV had a net. 
+
+Interestingly, we see a treatment by cFos_bin by WFA 3way interaction in the median split data and a reactivation by quartile by WFA 3way interaction in the quartile split data. These were exactly the two 3way effects I observed (and followed up on) when I performed the 1 vs all (top quartile vs bottom 3) analyses the last time. 
+
+I won't follow up on either of these 3way effects here since I suspect they will yield the same pattern as before, but I will point that we still get the reactivation by treatment by cFos intensity effect (which I followed up on for both the median and quartile split data above). However just to be sure, I will still perform 2 sets of 3ways (with vs without PNNs) for both the median and quartile split data.
+
+```{r}
+### ANOVAs
+# 4way ANOVA: reactivation x treatment x cFos_bin (median split) x PNNs (2 x 2 x 2 x 2)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*cFos_bin_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', cFos_bin_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+# 4way ANOVA: reactivation x treatment x cFos_quartile x PNNs (2 x 2 x 2 x 2)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos.highlow)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+```
+
+\newpage
+
+## Do PNNs matter? Reactivation by treatment by WFA 3way ANOVAs in cFos_high and cFos_low (median split)
+
+No 3way effects here (as expected since we did not get the 4way effect from the median split data above).
+
+```{r, fig.height=8, fig.width=6}
+### ANOVAs
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos high (median split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos high (median split)')
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos[PV.cFos$cFos_bin_factor == 'cfos_high',])
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos low (median split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos low (median split)')
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos[PV.cFos$cFos_bin_factor == 'cfos_low',])
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+f <- ggplot(PV.cFos[PV.cFos$cFos_bin_factor == 'cfos_high',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm PV intensity, cFos_high (median split), WFA+/-')
+
+g <- ggplot(PV.cFos[PV.cFos$cFos_bin_factor == 'cfos_low',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm PV intensity, cFos_low (median split), WFA+/-')
+
+grid.arrange(f, g, nrow=2)
+```
+
+
+\newpage
+
+## Do PNNs matter? Reactivation by treatment by WFA 3way ANOVAs in cFos_q4 and cFos_q1 (quartile split)
+
+No 3way effects here either (also as expected since we did not get the 4way effect above from the quartile split data above).
+
+```{r, fig.height=8, fig.width=6}
+### ANOVAs
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos high (quartile split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos high (quartile split)')
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos.highlow[PV.cFos.highlow$quartile_factor == 'q4',])
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos low (quartile split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos low (quartile split)')
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos.highlow[PV.cFos.highlow$quartile_factor == 'q1',])
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+f <- ggplot(PV.cFos.highlow[PV.cFos.highlow$quartile_factor == 'q4',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm PV intensity, top quartile cFos intensity, WFA+/-')
+
+g <- ggplot(PV.cFos.highlow[PV.cFos.highlow$quartile_factor == 'q1',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm PV intensity, bottom quartile cFos intensity, WFA+/-')
+
+grid.arrange(f, g, nrow=2)
+```
+
+# cFos, quartile split on Npas4 intensity (ignoring PNNs)
+
+## Revisting median split (reactivation by treatment by Npas4_bin) 3way ANOVA
+
+Here we see a 3way reactivation by treatment by Npas4 bin effect (F=14.4389, p=0.000147).
+Following up with two 2ways we have the following:
+
+In the high intensity Npas4 bin (above median) we have a significant treatment by reactivation 2way effect (F=65.1302 p=1.111e-15) and all the contrasts are significant:
+
+  * under the FR1 reactivation condition: cFos intensity is higher in KET than SAL (t=8.804  p<0.0001)
+  * under the VR5 reactivation condition: cFos intensity is lower in KET than SAL (t=-2.518 p=0.0236)
+  * under the KET treatment condition: cFos intensity is higher in FR1 than VR5 (t=4.783, p=3.66e-06)
+  * under the SAL treatment condition: cFos intensity is lower in FR1 than VR5 (t=-7.138, p=3.00e-12)
+
+In the low intensity Npas4 bin (below median) we have a significant treatment by reactivation 2way effect (F=9.6401, p=0.001939) and the following contrasts are significnat:
+
+  * under the VR5 reactivation condition: cFos intensity is lower in KET than SAL (t=-2.413, p=0.0316)
+  * under the KET treatment condition: cFos intenisty is higher in FR1 than VR5 (t=3.425, p=.00126)
+
+
+```{r}
+cFos.Npas4 <- read.csv('KET-VR5_cFos_split_on_Npas4_NORM.csv')
+cFos.Npas4$treat_factor <- as.factor(cFos.Npas4$treat)
+cFos.Npas4$react_factor <- as.factor(cFos.Npas4$react)
+cFos.Npas4$react_treat_factor <- as.factor(cFos.Npas4$treatment)
+cFos.Npas4$Npas4_bin_factor <- as.factor(cFos.Npas4$Npas4_bin)
+cFos.Npas4$dummy_WFA_factor <- as.factor(cFos.Npas4$dummy_WFA)
+
+# slicing out only the top and the bottom quartiles
+cFos.Npas4.high <- cFos.Npas4[cFos.Npas4$quartile == 'q4',]
+cFos.Npas4.low <- cFos.Npas4[cFos.Npas4$quartile == 'q1',]
+cFos.Npas4.highlow <- rbind(cFos.Npas4.high, cFos.Npas4.low)
+cFos.Npas4.highlow$quartile_factor <- as.factor(cFos.Npas4.highlow$quartile)
+
+### ANOVAs
+# 3way ANOVA: reactivation x treatment x quartile (2 x 2 x 2)
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*Npas4_bin_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', Npas4_bin_factor='contr.sum'), data=cFos.Npas4)
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+f <- ggplot(cFos.Npas4, aes(x=Npas4_bin_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm cFos intensity, split on Npas4 intensity (median)')
+f
+
+print('cFos with Npas4 high (above median)')
+eda_anova(cFos.Npas4[cFos.Npas4$Npas4_bin == 'Npas4_high',], qual=TRUE, quant=FALSE)
+
+print('cFos with Npas4 low (below median)')
+eda_anova(cFos.Npas4[cFos.Npas4$Npas4_bin == 'Npas4_low',], qual=TRUE, quant=FALSE)
+
+```
+
+\newpage
+
+## Top and bottom quartiles only
+
+Here we see a 3way reactivation by treatment by Npas4 quartile effect (8.6126 p=0.003378).
+Following up with two 2ways we have the following:
+
+In the top quartile of Npas4 intensity, we have a significant treatment by reactivation 2way effect (F=26.7326, p=2.845e-07) and 3 of the contrasts are significant:
+
+  * under the FR1 reactivation condition: cFos intensity is higher in KET than SAL (t=6.293, p<0.0001)
+  * under the KET treatment condition: cFos intensity is higher in FR1 than SAL (t=2.712, p=1.36e-02)
+  * under the SAL treatment condition: cFos intensity is lower in FR1 tha SAL (t=-5.129, p=7.04e-07)
+
+
+In the low intensity Npas4 group (below median) we have a significant treatment by reactivation 2way effect (F=5.9150, p=0.0152) and the following contrasts are significant:
+  
+  * under the VR5 condition: cFos intensity is lower in KET than SAL (t=-2.552, p=0.0216)
+  * under the KET condition: cFos intensity is higher in FR1 than VR5 (t=2.561, p=0.021)
+
+Overall the top vs bottom quartile split on Npas4 yields very similar pattern as the simple median split, but this pattern is not as pronounced. In particular, in the high Npas4 intensity cFos cells, we do NOT get a difference between KET and SAL under the VR5 reactivation condition (but we DO see this difference in the median split).
+
+```{r}
+# 3way ANOVA: reactivation x treatment x quartile (2 x 2 x 2)
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum'), data=cFos.Npas4.highlow)
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+f <- ggplot(cFos.Npas4.highlow, aes(x=quartile_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm cFos intensity, split on Npas4 intensity (top vs bottom quartile)')
+f
+
+print('cFos with Npas4 high (top quartile)')
+eda_anova(cFos.Npas4.high, qual=TRUE, quant=FALSE)
+
+print('cFos with Npas4 low (bottom quartile)')
+eda_anova(cFos.Npas4.low, qual=TRUE, quant=FALSE)
+```
+
+# Do PNNs matter? 
+
+Again, rom the 4way ANOVAs below, we can see that neither the median split nor the quartile split data has a 4way interaction. This means that we CANNOT conclude that the interaction between reactivation, treatment and Npas4 intensity depends on whether a cFos had a net. 
+
+```{r}
+### ANOVAs
+# 4way ANOVA: reactivation x treatment x cFos_bin (median split) x PNNs (2 x 2 x 2 x 2)
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*Npas4_bin_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', Npas4_bin_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=cFos.Npas4)
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+# 4way ANOVA: reactivation x treatment x Npas4_quartile x PNNs (2 x 2 x 2 x 2)
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=cFos.Npas4.highlow)
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+```
+
+
+\newpage
+
+## Do PNNs matter? Reactivation by treatment by WFA 3way ANOVAs in cFos_high and cFos_low (median split)
+
+No 3way effects here (as expected since we did not get the 4way effect from the median split data above). From the visualizations we can see the same pattern in the WFA_True and WFA False columns.
+
+```{r, fig.height=8, fig.width=6}
+### ANOVAs
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos high (median split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in cFos high (median split)')
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=cFos.Npas4[cFos.Npas4$Npas4_bin_factor == 'Npas4_high',])
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in Npas4 low (median split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in Npas4 low (median split)')
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=cFos.Npas4[cFos.Npas4$Npas4_bin_factor == 'Npas4_low',])
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+f <- ggplot(cFos.Npas4[cFos.Npas4$Npas4_bin_factor == 'Npas4_high',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm cFos intensity, Npas4_high (median split), WFA+/-')
+
+g <- ggplot(cFos.Npas4[cFos.Npas4$Npas4_bin_factor == 'Npas4_low',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm cFos intensity, Npas4_low (median split), WFA+/-')
+
+grid.arrange(f, g, nrow=2)
+```
+
+\newpage
+
+## Do PNNs matter? Reactivation by treatment by WFA 3way ANOVAs in Npas4_q4 and Npas4_q1 (quartile split)
+
+No 3way effects here either (also as expected since we did not get the 4way effect above from the quartile split data above).
+
+```{r, fig.height=8, fig.width=6}
+### ANOVAs
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in Npas4 high (quartile split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in Npas4 high (quartile split)')
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=cFos.Npas4.highlow[cFos.Npas4.highlow$quartile_factor == 'q4',])
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+# 3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in Npas4 low (quartile split)
+print('3way ANOVA: reactivation x treatment x PNNs (2 x 2 x 2) in Npas4 low (quartile split)')
+cFos.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=cFos.Npas4.highlow[cFos.Npas4.highlow$quartile_factor == 'q1',])
+cFos.Npas4.aov <- car::Anova(cFos.Npas4.lm, type=3)
+print(cFos.Npas4.aov)
+
+f <- ggplot(cFos.Npas4.highlow[cFos.Npas4.highlow$quartile_factor == 'q4',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm cFos intensity, top quartile Npas4 intensity, WFA+/-')
+
+g <- ggplot(cFos.Npas4.highlow[cFos.Npas4.highlow$quartile_factor == 'q1',], aes(x=dummy_WFA_factor, y=norm_adjusted_intensity)) +
+  geom_boxplot(aes(fill=treatment, alpha=0.5)) +
+  ggtitle('Norm cFos intensity, bottom quartile Npas4 intensity, WFA+/-')
+
+grid.arrange(f, g, nrow=2)
+```

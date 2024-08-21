@@ -1,0 +1,422 @@
+---
+title: "KET_VR5_posthoc_part2"
+author: "Jonathan Ramos"
+date: "2024-04-09"
+output: pdf_document
+---
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(car)
+library(emmeans)
+library(stringr)
+```
+
+# Checking one more thing from the median split
+
+I just wanted to briefly check if the pattern that the most highly activted PV cells experience a decrease in PV intensity is driven mostly by PV cells with or without nets. I already have the set sliced and labeled, just need to index what we want out of it.
+
+```{r}
+Sidak <- function(pvals)
+  # takes a vector of p-values and corrects p-values according to 
+  # Sidaks method for multiple comparisons (1967)
+  #
+  # Jonathan Ramos 3/12/2024
+  {
+  adjusted <- c()
+  j <- length(pvals)
+  
+  for (i in 1:j){
+    adj_p <- 1-(1-pvals[i])^j
+    adjusted <- c(adjusted, adj_p)
+  }
+  return(adjusted)
+
+}
+
+eda_anova <- function(df, qual=TRUE, quant=TRUE)
+  # takes a filname, loads data from csv; data 4 columns:
+  # react_treat, react, treat, and norm_int (response var)
+  # react_treat is just react and treat in one string separated by "_"
+  # builds factor cols for categorical cols (norm_int is numeric, all others are categorical)
+  # then performs the following tasks:
+  # checks assumptions of normality with qqplot and shapiro wilk tests
+  # checks assumptions of equal variances with box plot and levene test
+  # performs 2way ANOVA (2 by 2, react by treat)
+  # performs post hoc pairwise comparisons (emmeans of levels of react by treat
+  # and emmeans of levels of treat by react)
+  # prints out all statistical test results and returns plot objects
+  # for the two plots: the qqplots and the box plots
+  # 
+  # Jonathan Ramos 3/12/2024
+
+  {
+  ### check assumption of normality
+  # quantitative assessment
+  if (quant) {
+    print(tapply(df$norm_adjusted_intensity, df$react_treat_factor, shapiro.test))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    g <- ggqqplot(df, x="norm_adjusted_intensity", facet.by=c("treat_factor", "react_factor"))
+  }
+  
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  if (quant) {
+    print(leveneTest(y = df$norm_adjusted_intensity, group=df$react_treat_factor, center='mean'))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    f <- ggplot(df, aes(x=treat_factor, y=norm_adjusted_intensity)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+      #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+      facet_wrap(~react_factor) +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  }
+
+  
+  # run the ANOVA, display summary
+  df.lm <- lm(norm_adjusted_intensity ~ treat_factor + react_factor + treat_factor*react_factor, contrasts=list(treat_factor='contr.sum', react_factor ='contr.sum'), data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  print(df.III.aov)
+  
+  # post hoc pairwise comparisons
+  emm <- emmeans(df.lm, ~ treat_factor * react_factor)
+  p1 <- pairs(emm, simple="treat_factor", adjust="tukey")
+  p2 <- pairs(emm, simple="react_factor", adjust="tukey")
+  
+  # add col to summary dataframe containing sidak adjusted p-values
+  adjusted_p.value1 <- Sidak(summary(p1, adjust="tukey")$p.value)
+  s1 <- summary(p1)
+  s1['adjusted_p.value'] <- adjusted_p.value1
+  
+  adjusted_p.value2 <- Sidak(summary(p2, adjust="tukey")$p.value)
+  s2 <- summary(p2)
+  s2['adjusted_p.value'] <- adjusted_p.value2
+  
+  # display results
+  print(s1)
+  print(s2)
+  
+  if (qual) {
+    return(list(g, f))
+  }
+}
+
+eda_anova_topqtreat <- function(df, qual=TRUE, quant=TRUE)
+  # edited version of above function for topq by treatment ANOVA
+  {
+  ### check assumption of normality
+  # quantitative assessment
+  if (quant) {
+    print(tapply(df$norm_adjusted_intensity, df$react_treat_factor, shapiro.test))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    g <- ggqqplot(df, x="norm_adjusted_intensity", facet.by=c("treat_factor", "topq_factor"))
+  }
+  
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  if (quant) {
+    print(leveneTest(y = df$norm_adjusted_intensity, group=df$react_treat_factor, center='mean'))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    f <- ggplot(df, aes(x=treat_factor, y=norm_adjusted_intensity)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+      #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+      facet_wrap(~topq_factor) +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  }
+
+  
+  # run the ANOVA, display summary
+  df.lm <- lm(norm_adjusted_intensity ~ treat_factor + topq_factor + treat_factor*topq_factor, contrasts=list(treat_factor='contr.sum', topq_factor ='contr.sum'), data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  print(df.III.aov)
+  
+  # post hoc pairwise comparisons
+  emm <- emmeans(df.lm, ~ treat_factor * topq_factor)
+  p1 <- pairs(emm, simple="treat_factor", adjust="tukey")
+  p2 <- pairs(emm, simple="topq_factor", adjust="tukey")
+  
+  # add col to summary dataframe containing sidak adjusted p-values
+  adjusted_p.value1 <- Sidak(summary(p1, adjust="tukey")$p.value)
+  s1 <- summary(p1)
+  s1['adjusted_p.value'] <- adjusted_p.value1
+  
+  adjusted_p.value2 <- Sidak(summary(p2, adjust="tukey")$p.value)
+  s2 <- summary(p2)
+  s2['adjusted_p.value'] <- adjusted_p.value2
+  
+  # display results
+  print(s1)
+  print(s2)
+  
+  if (qual) {
+    return(list(g, f))
+  }
+}
+
+eda_anova_topqreact <- function(df, qual=TRUE, quant=TRUE)
+  # edited version of above function for topq by react ANOVA
+  {
+  ### check assumption of normality
+  # quantitative assessment
+  if (quant) {
+    print(tapply(df$norm_adjusted_intensity, df$react_treat_factor, shapiro.test))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    g <- ggqqplot(df, x="norm_adjusted_intensity", facet.by=c("react_factor", "topq_factor"))
+  }
+  
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  if (quant) {
+    print(leveneTest(y = df$norm_adjusted_intensity, group=df$react_react_factor, center='mean'))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    f <- ggplot(df, aes(x=react_factor, y=norm_adjusted_intensity)) + geom_boxplot(aes(fill=react_factor), alpha=0.5) + 
+      #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+      facet_wrap(~topq_factor) +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  }
+
+  
+  # run the ANOVA, display summary
+  df.lm <- lm(norm_adjusted_intensity ~ react_factor + topq_factor + react_factor*topq_factor, contrasts=list(react_factor='contr.sum', topq_factor ='contr.sum'), data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  print(df.III.aov)
+  
+  # post hoc pairwise comparisons
+  emm <- emmeans(df.lm, ~ react_factor * topq_factor)
+  p1 <- pairs(emm, simple="react_factor", adjust="tukey")
+  p2 <- pairs(emm, simple="topq_factor", adjust="tukey")
+  
+  # add col to summary dataframe containing sidak adjusted p-values
+  adjusted_p.value1 <- Sidak(summary(p1, adjust="tukey")$p.value)
+  s1 <- summary(p1)
+  s1['adjusted_p.value'] <- adjusted_p.value1
+  
+  adjusted_p.value2 <- Sidak(summary(p2, adjust="tukey")$p.value)
+  s2 <- summary(p2)
+  s2['adjusted_p.value'] <- adjusted_p.value2
+  
+  # display results
+  print(s1)
+  print(s2)
+  
+  if (qual) {
+    return(list(g, f))
+  }
+}
+```
+
+# PV, quartile split on cFos intensity
+
+In this section I will perform two groups of ANOVAs, the first taking cFos quartile with four labels as a predictor and the second taking cFos top quartile with two labels as a predictor (since we are really only interested in the top quartile anyway). The top quartile feature, called topq, is true if a cell was in the top quartile of (non-normalized adjusted) cFos intensities and false otherwise, a simple boolean variable. 
+
+For each of these groups I will perform a 4way ANOVA (with the added dummy_WFA feature as a predictor to take into account the presence or absence of nets) and the planned 3way ANOVA (reactivation by treatment by quartile/topq).
+
+From the reactivation x treatment x quartile ANOVA below we can see that we nearly get a significant 3way interaction, but not quite (F=2.3308, p=0.07334). Then from the reactivation x treatment x topq ANOVA below, which considers only whether a cell was in the top quartile of cFos intensity or not, we do not have significant 3way effect (F=1.6315, p=0.2020), which suggests that a different quartile may have been driving the results from the reactivation x treatment x quartile 3way ANOVA. 
+
+Interestingly, from the reactivation x treatment x topq x dummy_WFA 4way ANOVA we do see significant 3way effects for both reactivation x topq x dummy_WFA (F=4.0253, p=0.040766) and treatment x topq x dummy_WFA (F=7.5738, p=0.006115). These two 3way effects are interesting because one interpretation of these effects is that the interaction between reactivation x topq and treatment x topq depend on whether a net was present but we'll need to follow up with some two way ANOVAs to be sure. Additionally, since there is no 4way interaction it may be the case that both react x topq and treat x topq act in the same direction/pattern in the presence/absence of nets. 
+
+Anyway, let's follow up with some 2ways. 
+
+```{r}
+PV.cFos <- read.csv('KET-VR5_PV_split_on_cFos_NORM.csv')
+PV.cFos$treat_factor <- as.factor(PV.cFos$treat)
+PV.cFos$react_factor <- as.factor(PV.cFos$react)
+PV.cFos$react_treat_factor <- as.factor(PV.cFos$treatment)
+PV.cFos$cFos_bin_factor <- as.factor(PV.cFos$cFos_bin)
+PV.cFos$dummy_WFA_factor <- as.factor(PV.cFos$dummy_WFA)
+PV.cFos$topq_factor <- as.factor(PV.cFos$q4)
+PV.cFos$quartile_factor <- as.factor(PV.cFos$quartile)
+
+### ANOVAs taking quartile with four labels as feature
+# 4way ANOVA: reactivation x treatment x quartile x WFA (2 x 2 x 4 x 2)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+# 3way ANOVA: reactivation x treatment x quartile (2 x 2 x 4)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum'), data=PV.cFos)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+### ANOVAs taking top quartile as feature (True if in top quartile, False otherwise)
+# 4way ANOVA: reactivation x treatment x topq x WFA (2 x 2 x 2 x 2)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*topq_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', topq_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.cFos)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+
+# 3way ANOVA: reactivation x treatment x topq (2 x 2 x 2)
+PV.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*topq_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', topq_factor='contr.sum'), data=PV.cFos)
+PV.cFos.aov <- car::Anova(PV.cFos.lm, type=3)
+print(PV.cFos.aov)
+```
+
+## 2way ANOVAs 
+### PV intensity explained by treat x topq in WFA+ or WFA- cells
+In WFA+ cells we have a significant interaction between treatment and topq (F=8.3855, p=0.004096). From the contrasts of estimated marginal means we have that in WFA+ cells, there is a significant decrease in highly active (top quartile of cFos intensity) PV cells in ketamine treated groups compared to Saline treated groups (t=-2.612, p=0.0189). This decrease in PV intensity in highly active PV cells in ketamine treated groups is not observed in PV cells without nets (no significant interaction effect was observed in WFA- cells); that is, in PV cells without nets, there is no difference in PV intensity in highly active PV cells between ketamine vs saline treated groups. 
+
+Additionally, in WFA+ (but not WFA-) cells, we also see that PV intensity is higher in highly active cells in saline treated groups (t=-2.322, p=0.0416). That is, in saline treated groups, PV intensity is higher in highly active cells if that cell has a net. 
+
+Note that overall PV intensity is still higher in cells with nets vs without nets which is consistent with previous results, but looking at those cells that have nets we begin to see differences in PV intensity in highly active cells that are not observed in cells without nets. 
+ 
+```{r}
+#### Following up on the 3way effects from our 4way react x treat x topq x WFA ANOVA
+PV.cFos.WFAp <- PV.cFos[PV.cFos$dummy_WFA == 'True', c('norm_adjusted_intensity', 'dummy_WFA', 'treat_factor', 'react_factor', 'topq_factor')]
+
+PV.cFos.WFAm <- PV.cFos[PV.cFos$dummy_WFA == 'False', c('norm_adjusted_intensity', 'dummy_WFA', 'treat_factor', 'react_factor', 'topq_factor')]
+
+eda_anova_topqtreat(PV.cFos.WFAp, quant=FALSE, qual=TRUE)
+eda_anova_topqtreat(PV.cFos.WFAm, quant=FALSE, qual=TRUE)
+```
+
+### PV intensity explained by react x topq in WFA+ or WFA- cells
+In WFA+ cells we do not see a significant interaction between topq and reactivation and instead see only a mean effect of reactivation which suggests that PV intensity is higher in VR5 reactivated groups regardless of how active that PV cell was (F=7.5459, p=0.006425). 
+
+```{r}
+eda_anova_topqreact(PV.cFos.WFAp, quant=FALSE, qual=TRUE)
+eda_anova_topqreact(PV.cFos.WFAm, quant=FALSE, qual=TRUE)
+```
+
+## Assessing directly what I was trying to get at (it's close but not quite)
+Basically I the kernel of what I wanted to know was: In PV cells with nets, is PV intensity different in highly active cells vs not as active cells (quantile split along cFos intensity). One approach to answering this question would be to take all triple labeled PV/WFA/cFos cells and perform a 2 x 2 x 2 3way ANOVA (reactivation by treatment by quantile) to address the question: does the interaction between reactivation and treatment depend on the level of activity in triple PV/WFA/cFos cells. 
+Unfortunately, we do note quite get a significant 3way effect (F=3.5841, p=0.059438), but for curiosity's sake I continue with the 2 factor decomposition of this 3way model, addressing reactivation by treatment effects at each level of topq_factor and the results do suggest a difference in PVs in the highest quantile of cFos activity vs the lower quantiles of cFos activity, and although the box plots might look compelling, there is no interaction effect (in either of the 2ways). Note the presence of a main effect of treatment in the highly active PVs (and a trend towards a main effect of reactivation in both highly active PVs and not as active PVs).
+
+```{r}
+#### Following up on the 3way effects from our 4way react x treat x topq x WFA ANOVA
+PV.cFos.WFAp <- PV.cFos[PV.cFos$dummy_WFA == 'True', c('norm_adjusted_intensity', 'dummy_WFA', 'treat_factor', 'react_factor', 'react_treat_factor', 'topq_factor')]
+
+triple.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*topq_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', topq_factor='contr.sum'), data=PV.cFos.WFAp)
+triple.aov <- car::Anova(triple.lm, type=3)
+print(triple.aov)
+
+PV.cFos.WFAp.upperq <- PV.cFos.WFAp[PV.cFos.WFAp$topq_factor == 'True',]
+PV.cFos.WFAp.lowerq <- PV.cFos.WFAp[PV.cFos.WFAp$topq_factor == 'False',]
+
+eda_anova(PV.cFos.WFAp.upperq, qual = TRUE, quant = FALSE)
+eda_anova(PV.cFos.WFAp.lowerq, qual = TRUE, quant =FALSE)
+```
+# PV, quartile split on Npas4 intensity 
+
+```{r}
+PV.Npas4 <- read.csv('KET-VR5_PV_split_on_Npas4_NORM.csv')
+PV.Npas4$treat_factor <- as.factor(PV.Npas4$treat)
+PV.Npas4$react_factor <- as.factor(PV.Npas4$react)
+PV.Npas4$Npas4_bin_factor <- as.factor(PV.Npas4$Npas4_bin)
+PV.Npas4$dummy_WFA_factor <- as.factor(PV.Npas4$dummy_WFA)
+PV.Npas4$topq_factor <- as.factor(PV.Npas4$q4)
+PV.Npas4$quartile_factor <- as.factor(PV.Npas4$quartile)
+
+PV.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.Npas4)
+PV.Npas4.aov <- car::Anova(PV.Npas4.lm, type=3)
+print(PV.Npas4.aov)
+
+PV.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*topq_factor*dummy_WFA_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', topq_factor='contr.sum', dummy_WFA_factor='contr.sum'), data=PV.Npas4)
+PV.Npas4.aov <- car::Anova(PV.Npas4.lm, type=3)
+print(PV.Npas4.aov)
+
+PV.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*topq_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', topq_factor='contr.sum'), data=PV.Npas4)
+PV.Npas4.aov <- car::Anova(PV.Npas4.lm, type=3)
+print(PV.Npas4.aov)
+
+PV.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum'), data=PV.Npas4)
+PV.Npas4.aov <- car::Anova(PV.Npas4.lm, type=3)
+print(PV.Npas4.aov)
+```
+
+# WFA split on cFos
+```{r}
+WFA.cFos <- read.csv('KET-VR5_WFA_split_on_cFos_NORM.csv')
+WFA.cFos$treat_factor <- as.factor(WFA.cFos$treat)
+WFA.cFos$react_factor <- as.factor(WFA.cFos$react)
+WFA.cFos$react_treat_factor <- as.factor(WFA.cFos$treatment)
+WFA.cFos$cFos_bin_factor <- as.factor(WFA.cFos$cFos_bin)
+WFA.cFos$dummy_PV_factor <- as.factor(WFA.cFos$dummy_PV)
+WFA.cFos$topq_factor <- as.factor(WFA.cFos$q4)
+WFA.cFos$quartile_factor <- as.factor(WFA.cFos$quartile)
+
+# reexamining the median split
+# 3way ANOVA: reactivation x treatment x topq (2 x 2 x 2)
+WFA.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*cFos_bin_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', cFos_bin_factor='contr.sum'), data=WFA.cFos)
+WFA.cFos.aov <- car::Anova(WFA.cFos.lm, type=3)
+print(WFA.cFos.aov)
+
+# quartile split (4 labels)
+# 3way ANOVA: reactivation x treatment x quartile (2 x 2 x 4)
+WFA.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum'), data=WFA.cFos)
+WFA.cFos.aov <- car::Anova(WFA.cFos.lm, type=3)
+print(WFA.cFos.aov)
+
+# topq vs all (2 labels)
+# 3way ANOVA: reactivation x treatment x topq (2 x 2 x 2)
+WFA.cFos.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*topq_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', topq_factor='contr.sum'), data=WFA.cFos)
+WFA.cFos.aov <- car::Anova(WFA.cFos.lm, type=3)
+print(WFA.cFos.aov)
+
+
+#### Following up on the 3way effects from our 4way react x treat x topq x WFA ANOVA
+WFA.cFos.upperq <- WFA.cFos[WFA.cFos$topq_factor == 'True', c('norm_adjusted_intensity', 'treat_factor', 'react_factor', 'react_treat_factor', 'topq_factor')]
+
+WFA.cFos.lowerq <- WFA.cFos[WFA.cFos$topq_factor == 'False', c('norm_adjusted_intensity', 'treat_factor', 'react_factor', 'react_treat_factor', 'topq_factor')]
+
+eda_anova(WFA.cFos.upperq, qual = TRUE, quant = FALSE)
+eda_anova(WFA.cFos.lowerq, qual = TRUE, quant = FALSE)
+```
+
+
+# WFA split on Npas4
+
+```{r}
+WFA.Npas4 <- read.csv('KET-VR5_WFA_split_on_Npas4_NORM.csv')
+WFA.Npas4$treat_factor <- as.factor(WFA.Npas4$treat)
+WFA.Npas4$react_factor <- as.factor(WFA.Npas4$react)
+WFA.Npas4$react_treat_factor <- as.factor(WFA.Npas4$treatment)
+WFA.Npas4$Npas4_bin_factor <- as.factor(WFA.Npas4$Npas4_bin)
+WFA.Npas4$dummy_PV_factor <- as.factor(WFA.Npas4$dummy_PV)
+WFA.Npas4$topq_factor <- as.factor(WFA.Npas4$q4)
+WFA.Npas4$quartile_factor <- as.factor(WFA.Npas4$quartile)
+
+# reexamining the median split
+# 3way ANOVA: reactivation x treatment x topq (2 x 2 x 2)
+WFA.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*Npas4_bin_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', Npas4_bin_factor='contr.sum'), data=WFA.Npas4)
+WFA.Npas4.aov <- car::Anova(WFA.Npas4.lm, type=3)
+print(WFA.Npas4.aov)
+
+# quartile split (4 labels)
+# 3way ANOVA: reactivation x treatment x quartile (2 x 2 x 4)
+WFA.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*quartile_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', quartile_factor='contr.sum'), data=WFA.Npas4)
+WFA.Npas4.aov <- car::Anova(WFA.Npas4.lm, type=3)
+print(WFA.Npas4.aov)
+
+# top quartile vs all (2 labels)
+# 3way ANOVA: reactivation x treatment x topq (2 x 2 x 2)
+WFA.Npas4.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*topq_factor, contrasts = list(treat_factor='contr.sum', react_factor='contr.sum', topq_factor='contr.sum'), data=WFA.Npas4)
+WFA.Npas4.aov <- car::Anova(WFA.Npas4.lm, type=3)
+print(WFA.Npas4.aov)
+
+
+#### Following up on the 3way effects from our 4way react x treat x topq ANOVA
+WFA.Npas4.upperq <- WFA.Npas4[WFA.Npas4$topq_factor == 'True', c('norm_adjusted_intensity', 'treat_factor', 'react_factor', 'react_treat_factor', 'topq_factor')]
+
+WFA.Npas4.lowerq <- WFA.Npas4[WFA.Npas4$topq_factor == 'False', c('norm_adjusted_intensity', 'treat_factor', 'react_factor', 'react_treat_factor', 'topq_factor')]
+
+eda_anova(WFA.Npas4.upperq, qual = TRUE, quant = FALSE)
+eda_anova(WFA.Npas4.lowerq, qual = TRUE, quant = FALSE)
+```

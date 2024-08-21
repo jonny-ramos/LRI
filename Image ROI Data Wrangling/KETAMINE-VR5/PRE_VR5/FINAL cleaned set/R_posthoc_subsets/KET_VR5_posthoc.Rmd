@@ -1,0 +1,364 @@
+---
+title: "KET Pre VR5 Post Hoc Tests"
+author: "Jonathan Ramos"
+date: "2024-04-04"
+output: pdf_document
+---
+
+```{r setup}
+library(ggplot2)
+library(ggpubr)
+library(car) # For levene.test() function
+library(emmeans)
+library(stringr)
+```
+
+# Following up on some 3way ANOVAs
+## A note about 3way ANOVA
+From the previous EDA done in python we saw that there might be a significant react by treatment by dummy_Npas4 effect. Here I will repeat the 3way and make sure it is done properly (stats in python don't quite agree with R and Prism all the time. Here in R I can more precisely specify the linear model). Next I will perform follow up post hoc tests.
+
+Given the we have a 3way effect, we can interpret this as "one of the 2 way interactions depends on the level of the third variable." That is, "the interaction of A x B depends on the level of C," and so one approach to following up on a 3way effect is to decompose the 3way analysis into a series of 2way analyses, e.g. conducting a 2way analysis investigating A x B at each level of C. Given that we are really only interested in reactivation x treatment effects I plan to perform 2 follow up 2way ANOVAs at each level of dummy_Npas4 (only two levels). This means that given a 3way effect, we expect one of the 2way ANOVAs to have a significant interaction effect (we just don't know which one it is yet; for example, either PV with Npas4 or PV without Npas4). 
+
+Note that if we have a 3way ANOVA with a significant 2way effect, but no significant 3way effect we are not interested in following up on those. Generally, if there is a significant 2way interaction effect but no significant 3way interaction effect, the next thing to do would be to investigate simple main effects, i.e. given A x B is significant, investigating differences in A while holding constant the level of B for each level of B. 
+
+## Following the EDA in python
+Of the ANOVAs that we thought were interesting a few of them could be reduced to either a t-test or required some follow up statistical tests.
+
+Reduce to t-test:
+
+* WFA intensity in PV+ vs PV-
+* PV intensity in WFA+ vs WFA-
+* WFA intensiyt in Npas4+ vs Npas4-
+* WFA intensity in cFos+ vs cFos-
+* PV intensity in cfos+ vs cFos-
+
+Post hoc 2way ANOVAs:
+
+* PV intensity in Npas4+ and Npas4-
+    + react x treat in Npas4+
+    + react x treat in Npas4-
+  (which of these do we see a two way effect in?)
+  
+* cFos intensity in Npas4+ and Npas4-
+    + react x treat in Npas4+
+    + react x treat in Npas4-
+  (which of these do we see a two way effect in?)
+  
+Interesting 3way ANOVAs from the last time:
+
+* PV intensity binned by high/low cFos
+* PV intensity binned by high/low Npas4
+
+For these, try 2 separate ANOVAs for each high/low condition.
+
+I did some reading about contrasts when building the linear models for ANOVA.
+The following links were particularly helpful:
+
+* https://faculty.nps.edu/sebuttre/home/r/contrasts.html
+* https://rpubs.com/monajhzhu/608609 
+
+
+```{r}
+Sidak <- function(pvals)
+  # takes a vector of p-values and corrects p-values according to 
+  # Sidaks method for multiple comparisons (1967)
+  #
+  # Jonathan Ramos 3/12/2024
+  {
+  adjusted <- c()
+  j <- length(pvals)
+  
+  for (i in 1:j){
+    adj_p <- 1-(1-pvals[i])^j
+    adjusted <- c(adjusted, adj_p)
+  }
+  return(adjusted)
+
+}
+
+eda_anova <- function(df, qual=TRUE, quant=TRUE)
+  # takes a filname, loads data from csv; data 4 columns:
+  # react_treat, react, treat, and norm_int (response var)
+  # react_treat is just react and treat in one string separated by "_"
+  # builds factor cols for categorical cols (norm_int is numeric, all others are categorical)
+  # then performs the following tasks:
+  # checks assumptions of normality with qqplot and shapiro wilk tests
+  # checks assumptions of equal variances with box plot and levene test
+  # performs 2way ANOVA (2 by 2, react by treat)
+  # performs post hoc pairwise comparisons (emmeans of levels of react by treat
+  # and emmeans of levels of treat by react)
+  # prints out all statistical test results and returns plot objects
+  # for the two plots: the qqplots and the box plots
+  # 
+  # Jonathan Ramos 3/12/2024
+
+  {
+  ### check assumption of normality
+  # quantitative assessment
+  if (quant) {
+    print(tapply(df$norm_intensity, df$react_treat_factor, shapiro.test))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    g <- ggqqplot(df, x="norm_intensity", facet.by=c("treat_factor", "react_factor"))
+  }
+  
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  if (quant) {
+    print(leveneTest(y = df$norm_intensity, group=df$react_treat_factor, center='mean'))
+  }
+  
+  # qualitative assessment
+  if (qual) {
+    f <- ggplot(df, aes(x=treat_factor, y=norm_intensity)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+      #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5) +
+      facet_wrap(~react_factor) +
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  }
+
+  
+  # run the ANOVA, display summary
+  df.lm <- lm(norm_intensity ~ treat_factor + react_factor + treat_factor*react_factor, contrasts=list(treat_factor='contr.sum', react_factor ='contr.sum'), data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  print(df.III.aov)
+  
+  # post hoc pairwise comparisons
+  emm <- emmeans(df.lm, ~ treat_factor * react_factor)
+  p1 <- pairs(emm, simple="treat_factor", adjust="tukey")
+  p2 <- pairs(emm, simple="react_factor", adjust="tukey")
+  
+  # add col to summary dataframe containing sidak adjusted p-values
+  adjusted_p.value1 <- Sidak(summary(p1, adjust="tukey")$p.value)
+  s1 <- summary(p1)
+  s1['adjusted_p.value'] <- adjusted_p.value1
+  
+  adjusted_p.value2 <- Sidak(summary(p2, adjust="tukey")$p.value)
+  s2 <- summary(p2)
+  s2['adjusted_p.value'] <- adjusted_p.value2
+  
+  # display results
+  print(s1)
+  print(s2)
+  
+  if (qual) {
+    return(list(g, f))
+  }
+}
+```
+
+# t-tests
+## WFA
+Three t-tests shown below compare WFA with vs without a second stain. For all t-tests, we have p<0.05 and so we may conclude the following:
+
+* Net intensity is higher in nets with PV than nets without PV (p=0.002566)
+* Net intenisty is higher in nets with cFos than nets without cFos (p=1.412e-05)
+* Net intenisty is higher in nets with Npas4 than nets without Npas4 (p=2.769e-05)
+
+```{r}
+single.WFA <- read.csv('NORM_single_WFA.csv', header=TRUE, sep=',')
+split <- str_split_fixed(single.WFA$treatment, "_", 2)
+single.WFA$react <- split[,1]
+single.WFA$treat <- split[,2]
+ 
+single.WFA$react_treat_factor <- as.factor(single.WFA$treatment)
+single.WFA$react_factor <- as.factor(single.WFA$react)
+single.WFA$treat_factor <- as.factor(single.WFA$treat)
+
+WFA_with_PV <- single.WFA[single.WFA$dummy_PV == 'True', 'norm_intensity']
+WFA_without_PV <- single.WFA[single.WFA$dummy_PV == 'False', 'norm_intensity']
+t.test(WFA_with_PV, WFA_without_PV)
+
+WFA_with_cFos <- single.WFA[single.WFA$dummy_cFos == 'True', 'norm_intensity']
+WFA_without_cFos <- single.WFA[single.WFA$dummy_cFos == 'False', 'norm_intensity']
+t.test(WFA_with_cFos, WFA_without_cFos)
+
+WFA_with_Npas4 <- single.WFA[single.WFA$dummy_Npas4 == 'True', 'norm_intensity']
+WFA_without_Npas4 <- single.WFA[single.WFA$dummy_Npas4 == 'False', 'norm_intensity']
+t.test(WFA_with_Npas4, WFA_without_Npas4)
+```
+
+## PV
+Three t-tests shown below compare PV with vs without a second stain. For all t-tests, we have p<0.05 and so we may conclude the following:
+
+- PV intensity is higher in PV cells with nets than PV cells without nets (p<2.2e-16)
+- PV intensity is higher in PV cells with cFos than PV cells without cFos (p=3.367e-08)
+- PV intensity is higher in PV cells with Npas4 than PV cells without Npas4 (p=5.005e-12)
+
+```{r}
+single.PV <- read.csv('NORM_single_PV.csv', header=TRUE, sep=',')
+split <- str_split_fixed(single.PV$treatment, "_", 2)
+single.PV$react <- split[,1]
+single.PV$treat <- split[,2]
+ 
+single.PV$react_treat_factor <- as.factor(single.PV$treatment)
+single.PV$react_factor <- as.factor(single.PV$react)
+single.PV$treat_factor <- as.factor(single.PV$treat)
+
+PV_with_WFA <- single.PV[single.PV$dummy_WFA == 'True', 'norm_intensity']
+PV_without_WFA <- single.PV[single.PV$dummy_WFA == 'False', 'norm_intensity']
+t.test(PV_with_WFA, PV_without_WFA)
+
+PV_with_cFos <- single.PV[single.PV$dummy_cFos == 'True', 'norm_intensity']
+PV_without_cFos <- single.PV[single.PV$dummy_cFos == 'False', 'norm_intensity']
+t.test(PV_with_cFos, PV_without_cFos)
+
+PV_with_Npas4 <- single.PV[single.PV$dummy_Npas4 == 'True', 'norm_intensity']
+PV_without_Npas4 <- single.PV[single.PV$dummy_Npas4 == 'False', 'norm_intensity']
+t.test(PV_with_Npas4, PV_without_Npas4)
+```
+
+
+# ANOVA
+## PV in Npas4+ vs Npas4-
+We have a significant reactivation x treatment x Npas4+ 3way interaction effect (F=4.3603, p=0.03699) and so to assess whether the interaction between reactivation and treatment depends on Npas4, I followed up with two 2way ANOVAs at each level of dummy_Npas4. We have a significant reactivation x treatment effect for PV/Npas4+ (F=4.9271, p=0.02687) but not for PV/Npas4- (F=0.1676, p=0.682327).
+
+From the multiple comparisons (contrasts) in PV/Npas4+, we do not find any significant differences (FR1 KET vs SAL was close with the raw p=0.0377, but the Sidak's adjusted p=0.074)
+
+```{r}
+# Verify 3way ANOVA
+single.PV$dummy_Npas4_factor <- as.factor(single.PV$dummy_Npas4)
+PV.lm <- lm(norm_intensity ~ treat_factor*react_factor*dummy_Npas4_factor, contrasts=list(treat_factor='contr.sum', react_factor='contr.sum', dummy_Npas4_factor='contr.sum'), data=single.PV)
+PV.III.aov <- car::Anova(PV.lm, type=3)
+print(PV.III.aov)
+
+# slice out the data we need
+PV.Npas4.p <- single.PV[single.PV$dummy_Npas4 == 'True', c('norm_intensity','dummy_Npas4','react_treat_factor', 'react_factor', 'treat_factor')]
+
+PV.Npas4.m <- single.PV[single.PV$dummy_Npas4 == 'False', c('norm_intensity','dummy_Npas4','react_treat_factor', 'react_factor', 'treat_factor')]
+
+# post hoc 2way ANOVAs
+print(' ')
+print('========== post hoc 2way: treat by react in PV,Npas4+ ==========')
+eda_anova(PV.Npas4.p, qual=FALSE, quant=FALSE)
+print(' ')
+print('========== post hoc 2way: treat by react in PV,Npas4- ==========')
+eda_anova(PV.Npas4.m, qual=FALSE, quant=FALSE)
+```
+
+## cFos intensity in Npas4+ vs Npas4- 
+Similar to the logic above, since we are mostly interested in reactivation x treatment interactions, I will follow up any significant 3way interactions by performing 2way ANOVAs at each of the levels of dummy_Npas4.
+
+We have a significant reactivation x treatment x Npas4+ 3way interaction effect (F=10.9864, p=0.0009219) and so to assess whether the interaction between reactivation and treatment depends on Npas4, I followed up with two 2way ANOVAs at each level of dummy_Npas4. For both cFos/Npas4+ and cFos/Npas4- we have significant reactivation x treatment 2way interaction effects (cFos/Npas4+ F=34.6292, p=4.33e-09; cFos/Npas4- F=9.5293, p=0.002035).
+
+For cFos/Npas4+, all estimated marginal means multiple comparisons are significant (p<0.005 for all contrasts). The 2way ANOVA for cFos/Npas4- only KET FR1 vs VR5 showed a significant comparison (t=-3.881, p=0.000212). Overall we can see that the interaction between reactivation and treatment is much more pronounced in cFos/Npas+ than cFos/Npas-, and that both populations of cFos cells show reduced intensity VR5 KET condition compared to VR5 SAL.
+
+Under this specific condition, we do see significant changes in PV intensity; in particular, PV intensity is reduced in PV cells that also had high cFos intensity under the VR5_KET condition. 
+
+```{r}
+# load in set
+single.cFos <- read.csv('NORM_single_cFos.csv', header=TRUE, sep=',')
+split <- str_split_fixed(single.cFos$treatment, "_", 2)
+single.cFos$react <- split[,1]
+single.cFos$treat <- split[,2]
+ 
+single.cFos$react_treat_factor <- as.factor(single.cFos$treatment)
+single.cFos$react_factor <- as.factor(single.cFos$react)
+single.cFos$treat_factor <- as.factor(single.cFos$treat)
+single.cFos$dummy_Npas4_factor <- as.factor(single.cFos$dummy_Npas4)
+
+# Verify 3way ANOVA
+cFos.lm <- lm(norm_intensity ~ treat_factor*react_factor*dummy_Npas4_factor, contrasts=list(treat_factor='contr.sum', react_factor='contr.sum', dummy_Npas4_factor='contr.sum'), data=single.cFos)
+cFos.III.aov <- car::Anova(cFos.lm, type=3)
+print(cFos.III.aov)
+
+# slice out the data we need
+cFos.Npas4.p <- single.cFos[single.cFos$dummy_Npas4 == 'True', c('norm_intensity','dummy_Npas4','react_treat_factor', 'react_factor', 'treat_factor')]
+
+cFos.Npas4.m <- single.cFos[single.cFos$dummy_Npas4 == 'False', c('norm_intensity','dummy_Npas4','react_treat_factor', 'react_factor', 'treat_factor')]
+
+# post hoc 2way ANOVAs
+print(' ')
+print('========== post hoc 2way: treat by react in cFos,Npas4+ ==========')
+eda_anova(cFos.Npas4.p, qual=FALSE, quant=FALSE)
+print(' ')
+print('========== post hoc 2way: treat by react in cFos,Npas4- ==========')
+eda_anova(cFos.Npas4.m, qual=FALSE, quant=FALSE)
+```
+
+## PV binned by cFos high/low
+This is interesting! We have a treatment x reactivation x cFos_bin 3way interaction effect (F=5.4723, p=0.01967) and so to determine if the treatment x reactivation effect depends on the level of cFos (either cFos_high or cFos_low), I performed 2 follow up 2way ANOVAs (treatment x reactivation) for each level of cFos_bin.
+
+From the post hoc 2way ANOVAs we can see that we have a 2way treatment x reactivation effect in PV cells with cFos_high (F=5.8773, p=0.01591) but not cFos_low (F=0.7253, p=0.39519). From the multiple comparisons we can see that in PV cells that also had high cFos intensity, under the VR5 condition, there is a significant reduction (estimate=-0.272) in the normalized intensity in KET treated animals compared to SAL (t=-2.263, p=0.0481)
+
+
+```{r}
+# load in set
+PV.cFos.split <- read.csv('KET-VR5_PV_split_on_cFos_NORM.csv', header=TRUE, sep=',')
+PV.cFos.split$norm_intensity <- PV.cFos.split$norm_adjusted_intensity
+split <- str_split_fixed(PV.cFos.split$treatment, "_", 2)
+PV.cFos.split$react <- split[,1]
+PV.cFos.split$treat <- split[,2]
+ 
+PV.cFos.split$react_treat_factor <- as.factor(PV.cFos.split$treatment)
+PV.cFos.split$react_factor <- as.factor(PV.cFos.split$react)
+PV.cFos.split$treat_factor <- as.factor(PV.cFos.split$treat)
+PV.cFos.split$cFos_bin_factor <- as.factor(PV.cFos.split$cFos_bin)
+
+# Verify 3way ANOVA
+PV.cFos.split.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*cFos_bin_factor, contrasts=list(treat_factor='contr.sum', react_factor='contr.sum', cFos_bin_factor='contr.sum'), data=PV.cFos.split)
+PV.cFos.split.III.aov <- car::Anova(PV.cFos.split.lm, type=3)
+print(PV.cFos.split.III.aov)
+
+# slice out the data we need
+PV.cFos.high <- PV.cFos.split[PV.cFos.split$cFos_bin == 'cfos_high', c('norm_intensity','cFos_bin', 'react_treat_factor', 'react_factor', 'treat_factor')]
+
+PV.cFos.low <- PV.cFos.split[PV.cFos.split$cFos_bin == 'cfos_low', c('norm_intensity','cFos_bin', 'react_treat_factor', 'react_factor', 'treat_factor')]
+
+# post hoc 2way ANOVAs
+print('========== post hoc 2way: treat by react in PV,cFos_high ==========')
+eda_anova(PV.cFos.high, qual=FALSE, quant=FALSE)
+print('========== post hoc 2way: treat by react in PV,cFos_low ==========')
+eda_anova(PV.cFos.low, qual=FALSE, quant=FALSE)
+```
+
+## PV binned by Npas4 high/low
+Similar to the PV binned by cFos high/low we find something kind of interesting here. We have a treatment x reactivation x Npas4_bin three way interaction effect (F=10.9266, p=0.001014), and so to determine of the interaction between treatment and reactivation depends on the level of Npas4, I performed 2 follow up 2way ANOVAs (treatment x reactivation) for each level of Npas4_bin.
+
+From the post hoc 2way ANOVAs we can see that we get a significant reactivation x treatment effect in PV cells with high Npas4 (F=13.3252, p=0.0003095) but not low Npas4 (F=1.3553, p=0.2456). 
+
+Holding the reactivation condition to FR1, comparing estimated marginal means between SAL - KET we can see that we have t=3.443 and p=0.00132 and so we may conclude that in PV cells with high Npas4 intensity, PV intensity is higher (estimate=0.418) in KET treated animals compared to SAL treated animals. 
+
+Holding the treatment condition to KET, comparing estimated marginal means between FR1 - VR5 we can see that we have t=3.880 and p=0.000258 and so we may conclude that in PV cells with high Npas4 intensity, PV intensity is lower (estimate=0.5496) in animals that received VR5 reactivation compared to FR1 reactivation.
+
+Overall it looks like in ketamine treated rats, FR1 and VR5 reactivation have opposite effects on PV intensity in PV cells that also had high Npas4 intensity. Similar to the changes we saw in PV intensity in PV cells that also had high cFos intensity, PV intensity is reduced in the VR5_KET condition in PV cells with high Npas4 intensity. This suggests that highly active PV cells actually have a reduction in intensity under the KET-VR5 condition.
+
+```{r}
+# load in set
+PV.Npas4.split <- read.csv('KET-VR5_PV_split_on_Npas4_NORM.csv', header=TRUE, sep=',')
+PV.Npas4.split$norm_intensity <- PV.Npas4.split$norm_adjusted_intensity
+split <- str_split_fixed(PV.Npas4.split$treatment, "_", 2)
+PV.Npas4.split$react <- split[,1]
+PV.Npas4.split$treat <- split[,2]
+ 
+PV.Npas4.split$react_treat_factor <- as.factor(PV.Npas4.split$treatment)
+PV.Npas4.split$react_factor <- as.factor(PV.Npas4.split$react)
+PV.Npas4.split$treat_factor <- as.factor(PV.Npas4.split$treat)
+PV.Npas4.split$Npas4_bin_factor <- as.factor(PV.Npas4.split$Npas4_bin)
+
+# Verify 3way ANOVA
+PV.Npas4.split.lm <- lm(norm_adjusted_intensity ~ treat_factor*react_factor*Npas4_bin_factor, contrasts=list(treat_factor='contr.sum', react_factor='contr.sum', Npas4_bin_factor='contr.sum'), data=PV.Npas4.split)
+PV.Npas4.split.III.aov <- car::Anova(PV.Npas4.split.lm, type=3)
+print(PV.Npas4.split.III.aov)
+
+# slice out the data we need
+PV.Npas4.high <- PV.Npas4.split[PV.Npas4.split$Npas4_bin == 'Npas4_high', c('norm_intensity','Npas4_bin', 'react_treat_factor', 'react_factor', 'treat_factor')]
+
+PV.Npas4.low <- PV.Npas4.split[PV.Npas4.split$Npas4_bin == 'Npas4_low', c('norm_intensity','Npas4_bin', 'react_treat_factor', 'react_factor', 'treat_factor')]
+
+# post hoc 2way ANOVAs
+print('========== post hoc 2way: treat by react in PV,Npas4_high ==========')
+eda_anova(PV.Npas4.high, qual=FALSE, quant=FALSE)
+print('========== post hoc 2way: treat by react in PV,Npas4_low ==========')
+eda_anova(PV.Npas4.low, qual=FALSE, quant=FALSE)
+```
+
+# Next steps?
+Overall it looks like highly active PV cells have a reduction in intensity in the VR5_KET condition that is not observed in PV cells that aren't as active. 
+
+I would maybe try correlating THESE mean PV/cFos_high and/or PV/Npas4_high intensities with behavior? 
+Or maybe more checking if PV/cFos_high or PV/Npas4_high intensity is different in WFA+/- cells? is this pattern of reduced PV intensity in very active PV cells mainly driven by PV cells with or without nets? 
+
+I would also maybe check is this pattern is more pronounced in the highest quartile or quintile of cFos/Npas4 intensity given that so many of these cells that were labeld as 'cFos_high' or 'Npas4_high' actually had an average intensity that was still less than background (negative intensity). Another way to do this that may not be quit as stringent as quartiles/quintiles would be to discard negative intensities and the perform the median split once more. (Although if we don't want to draw attention to the fact that we observed many cells with negative cFos/Npas4 intensity we can go with the quartile/quintile approach instead)
