@@ -1,0 +1,321 @@
+---
+title: "KET PRE VR5 SAC NORM means"
+author: "Jonathan Ramos"
+date: "2024-08-27"
+output: pdf_document
+fig_width: 6 
+fig_height: 4 
+---
+
+```{r setup}
+library(ggplot2)
+library(ggpubr)
+library(car) # For levene.test() function
+library(emmeans)
+library(stringr)
+library(MASS)
+knitr::opts_chunk$set(fig.width=6, fig.height=4) 
+```
+
+# NORM intensities, grouped by rat
+
+```{r}
+Sidak <- function(pvals)
+  # takes a vector of p-values and corrects p-values according to 
+  # Sidaks method for multiple comparisons (1967)
+  #
+  # Jonathan Ramos 3/12/2024
+  {
+  adjusted <- c()
+  j <- length(pvals)
+  
+  for (i in 1:j){
+    adj_p <- 1-(1-pvals[i])^j
+    adjusted <- c(adjusted, adj_p)
+  }
+  return(adjusted)
+
+}
+
+eda_anova_1way <- function(fname)
+  # doc
+  {
+  df <- read.csv(fname, header=TRUE, sep=",")
+  df$treat_factor <- as.factor(df$treat)
+  
+  df <- df[df$react == "VR5",c('norm_adj_mmbg','treat_factor','react')]
+  
+  ### check assumption of normality
+  # quantitative assessment
+  print(tapply(df$norm_adj_mmbg, df$treat_factor, shapiro.test))
+  
+  # qualitative assessment
+  g <- ggqqplot(df, x="norm_adj_mmbg", facet.by=c("treat_factor"))
+  g
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  print(leveneTest(y=df$norm_adj_mmbg, group=df$treat_factor, center='mean'))
+  
+  # qualitative assessment
+  f <- ggplot(df, aes(x=treat_factor, y=norm_adj_mmbg)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+    geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.7)+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  f
+  
+  # run the ANOVA, display summary
+  # since this is just a one way ANOVA with only 2 levels, this is essentially just a t-test
+  # ANOVA is performed here for consistency
+  df.lm <- lm(norm_adj_mmbg ~ treat_factor, data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  #print(df.III.aov)
+  
+  # now let's actually just do the t-test
+  print(t.test(df[df$treat_factor == "KET",]$norm_adj_mmbg, df[df$treat_factor == "SAL",]$norm_adj_mmbg,))
+  
+  # KS test
+  print(kruskal.test(norm_adj_mmbg ~ treat_factor, data=df))
+  
+  # no post hoc is required for 1way ANOVA with 2 levels
+  # return figure objects only
+  return(list(g, f))
+}
+
+
+
+### this time with boxcox transformation first
+eda_anova_1way_boxcox <- function(fname)
+  # doc
+  {
+  df <- read.csv(fname, header=TRUE, sep=",")
+  df$treat_factor <- as.factor(df$treat)
+  df <- df[df$react == "VR5",c('norm_adj_mmbg','treat_factor','react')]
+  print(df$coloc_stain_type)
+  
+  norm.adj.mmbg <<- c(df$norm_adj_mmbg)
+  norm.adj.mmbg <<- norm.adj.mmbg + 0.00000001
+  
+  # apply boxcox over range of lambdas
+  b <- boxcox(lm(norm.adj.mmbg ~ 1))
+  
+  # Exact best lambda
+  lambda.best <<- b$x[which.max(b$y)]
+  print("best lamda")
+  print(lambda.best)
+  
+  boxcox.transformed <- c()
+  j <- length(norm.adj.mmbg)
+  for (i in 1:j){
+    transformed.x <- (norm.adj.mmbg[i]^lambda.best-1)/lambda.best
+    boxcox.transformed <- c(boxcox.transformed, transformed.x)
+  }
+  df$norm.adj.mmbg.boxcox <- boxcox.transformed
+
+  ### check assumption of normality
+  # quantitative assessment
+  print(tapply(df$norm.adj.mmbg.boxcox, df$treat_factor, shapiro.test))
+  
+  # qualitative assessment
+  g <- ggqqplot(df, x="norm.adj.mmbg.boxcox", facet.by=c("treat_factor"))
+  g
+  
+  ### check assumption of equal variances
+  # quantitative assessment
+  print(leveneTest(y=df$norm.adj.mmbg.boxcox, group=df$treat_factor, center='mean'))
+  
+  # qualitative assessment
+  f <- ggplot(df, aes(x=treat_factor, y=norm.adj.mmbg.boxcox)) + geom_boxplot(aes(fill=treat_factor), alpha=0.5) + 
+    #geom_dotplot(binaxis = "y", stackdir = "center", dotsize=0.5, alpha=0.5)
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+  f
+  
+  # run the ANOVA, display summary
+  # since this is just a one way ANOVA with only 2 levels, this is essentially just a t-test
+  # ANOVA is performed here for consistency
+  df.lm <- lm(norm.adj.mmbg.boxcox ~ treat_factor, data=df)
+  df.III.aov <- car::Anova(df.lm, type = 3)
+  #print(df.III.aov)
+  
+  # now let's actually just do the t-test
+  print(t.test(df[df$treat_factor == "KET",]$norm.adj.mmbg.boxcox, df[df$treat_factor == "SAL",]$norm.adj.mmbg.boxcox,))
+  
+  # KS test
+  print(kruskal.test(norm.adj.mmbg.boxcox ~ treat_factor, data=df))
+  
+  # no post hoc is required for 1way ANOVA with 2 levels
+  # return figure objects only
+  return(list(g, f))
+}
+
+```
+
+## pulling out filenames
+
+```{r}
+fnames <- list.files(path='NORM_means',pattern='NORM.csv', full.names=TRUE)
+fnames
+```
+
+\newpage
+
+# single PV
+
+```{r}
+i <- str_which(fnames, "single_PV")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+\newpage
+
+# single WFA
+
+```{r}
+i <- str_which(fnames, "single_WFA")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+\newpage
+
+# Single c-Fos
+
+```{r}
+i <- str_which(fnames, "single_cFos")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+\newpage
+
+# PV coloc w WFA
+
+```{r}
+i <- str_which(fnames, "PV_coloc_w_WFA")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# PV coloc w cFos
+
+```{r}
+i <- str_which(fnames, "PV_coloc_w_cFos")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# WFA coloc w PV
+
+```{r}
+i <- str_which(fnames, "WFA_coloc_w_PV")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# WFA coloc w cFos
+
+```{r}
+i <- str_which(fnames, "WFA_coloc_w_cFos")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# cFos coloc w PV
+
+```{r}
+i <- str_which(fnames, "cFos_coloc_w_PV")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# cFos coloc w WFA
+
+```{r}
+i <- str_which(fnames, "cFos_coloc_w_WFA")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# triple PV
+
+```{r}
+i <- str_which(fnames, "triple_PV")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# triple WFA
+
+```{r}
+i <- str_which(fnames, "triple_WFA")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
+
+
+\newpage
+
+# triple cFos
+
+```{r}
+i <- str_which(fnames, "triple_cFos")
+f <- fnames[i]
+print(f)
+figs <- eda_anova_1way(f)
+figs[1]
+figs[2]
+```
