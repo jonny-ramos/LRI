@@ -73,6 +73,49 @@ def compute_mwt(signal, fs, peak_freq, n):
 
     return conv_result
 
+def compute_mwt_fwhm(signal, peak_freq, h_fn=lambda f: 3180/(8*np.log(f))/1000, fs=2000):
+    '''
+    Takes a timeseries and computes morlet wavelet convolution.
+    args:
+        signal(N): list or array, N: number of samples (time points)
+        fs: int, sampling rate
+        peak_freq: int, peak frequency of generated wavelet
+        n: int, number of cycles in generated wavelet
+        h_fn: function which takes in a frequency f, an integer, and returns
+            the full width at half maximum used to define the morlet wavelet
+            for that frequency.
+            from testing ipynb, lambda f: 3180/(8*np.log(f))/1000 looked best;
+            if h_fn is not specified, defaults to 3180/(8*np.log(f))/1000
+
+    return:
+        conv_result: np.ndarray, copmlex coefficients resulting from convolution
+    '''
+
+    sig = signal
+
+    fs = 2000
+    f = peak_freq
+    h = h_fn(f)
+
+    f = peak_freq
+    t = np.arange(-2, 2 + 1/fs, 1/fs)
+    wavelet = np.exp(2*np.pi*1j*f*t) * np.exp((-4*np.log(2)*t**2)/h**2)
+
+    # fft params
+    n_sig = len(sig)
+    n_wavelet = len(wavelet)
+    n_conv = n_wavelet + n_sig - 1
+    n_conv_pwr2 = 2**(math.ceil(np.log2(np.abs(n_conv))))
+    n_half_wavelet = len(wavelet) // 2
+
+    # convolultion
+    sig_fft = fft(sig, n_conv_pwr2)
+    wavelet_fft = fft(wavelet, n_conv_pwr2)
+    conv_result = ifft(sig_fft * wavelet_fft)[:n_conv]#* (np.sqrt(s)/20) # scaling factor = np.squrt(s)/20
+    conv_result = conv_result[n_half_wavelet:-n_half_wavelet]
+
+    return conv_result
+
 # linear normalization
 def baseline_norm(raw_pwr, bline_index, db=False):
     '''

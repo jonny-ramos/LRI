@@ -31,14 +31,14 @@ T2_long = f + '/T2_long/*.npy'
 T7_long = f + '/T7_long/*.npy'
 T8_long = f + '/T8_long/*.npy'
 
-for path in [cue0_long, cue1_long]:
+for path in [cue0, cue1]:
     if args.spectrogram:
     # CUE0
         files = glob.glob(path)
         if not len(files) == 0:
             for f in files:
-                os.system(f'python3 spct.py {f} 20 100')
-                os.system(f'python3 spct.py {f} 2 20 -nlow')
+                os.system(f'python3 spct.py {f} 2 30')
+                os.system(f'python3 spct.py {f} 2 101 -nlow')
 
 
     if args.itpc:
